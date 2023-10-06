@@ -2,7 +2,7 @@ use tracing_subscriber::fmt;
 use tracing_subscriber::EnvFilter;
 
 pub fn init_tracing() {
-    let filter = EnvFilter::new("heartbeat-fup-api=trace");
+    let filter = EnvFilter::new("heartbeat_api=trace");
 
     let subscriber = fmt::Subscriber::builder()
         .compact()

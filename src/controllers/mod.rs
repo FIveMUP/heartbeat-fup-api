@@ -1,9 +1,10 @@
-use crate::error::{AppError, AppResult};
+use crate::error::AppResult;
+use axum::extract::Path;
+use tracing::info;
 
-pub(crate) async fn index() -> AppResult<&'static str> {
-    if true {
-        return Err(AppError::InternalServerError);
-    }
+#[inline(always)]
+pub(crate) async fn heartbeat(Path(cfx_license): Path<String>) -> AppResult<()> {
+    info!("cfx_license: {}", cfx_license);
 
-    Ok("Hello, world!")
+    Ok(())
 }

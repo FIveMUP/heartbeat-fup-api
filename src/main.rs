@@ -1,7 +1,11 @@
 use axum::Server;
 use config::{init_tracing, Database};
 use dotenvy::dotenv;
+use mimalloc::MiMalloc;
 use std::{net::TcpListener, sync::Arc};
+
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
 
 mod config;
 mod controllers;
