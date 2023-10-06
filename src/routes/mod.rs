@@ -1,11 +1,11 @@
-use crate::controllers::index;
+use crate::{config::Database, controllers::index, states::GlobalState};
 use axum::{
     error_handling::HandleErrorLayer,
     http::StatusCode,
     routing::{get, IntoMakeService},
     Router,
 };
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 use tower::{load_shed::LoadShedLayer, ServiceBuilder};
 
 async fn handle(_: Box<dyn std::error::Error + Send + Sync>) -> (StatusCode, String) {
@@ -15,7 +15,9 @@ async fn handle(_: Box<dyn std::error::Error + Send + Sync>) -> (StatusCode, Str
     )
 }
 
-pub(crate) async fn routes() -> IntoMakeService<Router> {
+pub(crate) async fn routes(db: Arc<Database>) -> IntoMakeService<Router> {
+    let global_state = GlobalState::new(db);
+
     Router::new()
         .route("/", get(index))
         .layer(
@@ -24,5 +26,6 @@ pub(crate) async fn routes() -> IntoMakeService<Router> {
                 .layer(LoadShedLayer::new())
                 .timeout(Duration::from_secs(10)),
         )
+        .with_state(global_state)
         .into_make_service()
 }

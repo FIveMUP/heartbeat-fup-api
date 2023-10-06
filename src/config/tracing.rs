@@ -1,0 +1,14 @@
+use tracing_subscriber::fmt;
+use tracing_subscriber::EnvFilter;
+
+pub fn init_tracing() {
+    let filter = EnvFilter::new("heartbeat-fup-api=trace");
+
+    let subscriber = fmt::Subscriber::builder()
+        .compact()
+        .with_env_filter(filter)
+        .without_time()
+        .finish();
+
+    tracing::subscriber::set_global_default(subscriber).unwrap();
+}
