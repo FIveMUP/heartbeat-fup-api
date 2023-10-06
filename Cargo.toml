@@ -6,3 +6,26 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+dotenvy = "0.15.7"
+tokio = { version = "1.32.0", features = ["full"] }
+axum = { version = "0.6.20", features = [
+    "form",
+    "macros",
+    "multipart",
+    "headers",
+] }
+tower = { version = "0.4.13", features = [
+    "tokio",
+    "limit",
+    "buffer",
+    "timeout",
+    "load-shed",
+] }
+thiserror = "1.0.49"
+
+[profile.release]
+debug = 0
+lto = "fat"
+opt-level = 3
+codegen-units = 1
+split-debuginfo = "off"
