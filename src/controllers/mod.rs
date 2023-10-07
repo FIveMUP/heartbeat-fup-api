@@ -1,3 +1,4 @@
+use crate::error::ServerError;
 use crate::states::GlobalState;
 use axum::{
     extract::{Path, State},
@@ -6,19 +7,24 @@ use axum::{
     Json,
 };
 use serde_json::json;
-use crate::error::ServerError;
 
 #[inline(always)]
 pub(crate) async fn heartbeat(
     State(state): State<GlobalState>,
     Path(cfx_license): Path<String>,
 ) -> Result<impl IntoResponse, ServerError> {
-    if !state.threads_service.get(&cfx_license) {
-        let Some(_) = state.server_repository.find_by_license(&cfx_license).await else {
-            return Err(ServerError::NOT_FOUND);
-        };
+    let server_data = state.server_repository.find_by_license(&cfx_license).await;
 
-        state.threads_service.spawn_thread(&cfx_license);
+    if server_data.is_empty() {
+        return Err(ServerError::NOT_FOUND);
+    }
+
+    if !state.threads_service.get(&cfx_license) {
+        state.threads_service.spawn_thread(
+            &cfx_license,
+            &server_data[0].id.as_deref().unwrap_or(""),
+            &server_data[0].sv_licenseKeyToken.as_deref().unwrap_or(""),
+        );
     }
 
     state.threads_service.heartbeat(&cfx_license);

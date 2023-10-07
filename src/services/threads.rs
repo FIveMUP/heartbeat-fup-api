@@ -1,6 +1,7 @@
-use crate::{config::Database, repositories::StockAccountRepository};
+use crate::{config::Database, repositories::StockAccountRepository, services::HeartbeatService};
 use dashmap::DashMap;
 use std::{
+    collections::HashSet,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -35,54 +36,65 @@ impl ThreadService {
         }
     }
 
-    pub fn spawn_thread(&self, key: &str) {
+    pub fn spawn_thread(&self, key: &str, server_id: &str, sv_licenseKeyToken: &str) {
         if !self.get(key) {
-            let handle = self.tokio_thread(key);
+            let handle = self.tokio_thread(key, server_id, sv_licenseKeyToken);
             self.threads.insert(key.to_owned(), Arc::new(handle));
         }
     }
 
     #[inline(always)]
-    fn tokio_thread(&self, key: &str) -> JoinHandle<()> {
+    fn tokio_thread(&self, key: &str, server_id: &str, sv_licenseKeyToken: &str) -> JoinHandle<()> {
         let key = key.to_owned();
         let db = self.db.clone();
         let heartbeat = self.heartbeat.clone();
-        let stock_repo = StockAccountRepository::new(&db);
         let threads = self.threads.clone();
+        let server_id = server_id.to_owned();
+        let stock_repo = StockAccountRepository::new(&db);
+        let sv_licenseKeyToken = sv_licenseKeyToken.to_owned();
+        let heartbeat_service = HeartbeatService::new(&db);
 
         self.heartbeat.insert(key.clone(), Instant::now());
 
         info!("Spawning thread {}", key);
 
         tokio::spawn(async move {
-            
-
-            /*
-
-               assignedPlayers: [
-               {
-                   id: "okki_3a",
-                   name: "juan",
-
-               },
-               ]
-
-               Comparar Stock accounts devuelve los que no estaban añadidos
-
-
-            */
-            // Select * stock_accounts where assignedServer -> ["pepe"] -> Borrar juan de la assignedPlayers
-            // new_players = los jugadores nuevos
-            // stock_accounts -> assignedPlayers
+            let assigned_players = stock_repo.find_all_by_server(&server_id).await;
+            let mut assigned_ids: Vec<_> = assigned_players
+                .iter()
+                .filter_map(|player| player.id.clone())
+                .collect();
 
             loop {
                 tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                let measure_ms = tokio::time::Instant::now();
                 let now = Instant::now();
                 let last_heartbeat = heartbeat.get(&key).unwrap();
 
-                let stock_accounts = stock_repo.find_all_by_server(&key).await;
+                let new_players = stock_repo.find_all_by_server(&server_id).await;
+                let new_ids: Vec<_> = new_players
+                    .iter()
+                    .filter_map(|player| player.id.clone())
+                    .collect();
 
-                info!("{} stock accounts found", stock_accounts.len());
+                let new_assigned_players: Vec<_> = new_players
+                    .iter()
+                    .filter(|player| {
+                        player.id.is_some() && !assigned_ids.contains(&player.id.clone().unwrap())
+                    })
+                    .cloned()
+                    .collect();
+
+                if !new_assigned_players.is_empty() {
+                    info!(
+                        "New players assigned to thread {}: {:?}",
+                        key, new_assigned_players
+                    );
+                } else {
+                    info!("No new players assigned to thread {}", key);
+                }
+
+                assigned_ids = new_ids;
 
                 if now.duration_since(*last_heartbeat).gt(&HEARTBEAT_TIMEOUT) {
                     info!("Thread {} is dead", key);
@@ -93,7 +105,7 @@ impl ThreadService {
                     break;
                 }
 
-                //
+                let elapsed = measure_ms.elapsed().as_millis();
             }
         })
     }

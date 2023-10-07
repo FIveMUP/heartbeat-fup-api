@@ -1,6 +1,6 @@
 use tracing::info;
 
-use crate::config::Database;
+use crate::{config::Database, entities::Server};
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -13,15 +13,15 @@ impl ServerRepository {
         Self { db: db.clone() }
     }
 
-    pub async fn find_by_license(&self, license: &str) -> Option<(String,)> {
+    pub async fn find_by_license(&self, license: &str) -> Vec<Server> {
         info!("Finding server by license: {}", license);
-        sqlx::query_as::<_, (String,)>(
+        sqlx::query_as::<_, Server>(
             r#"
-                SELECT cfxLicense FROM servers WHERE cfxLicense = ?
+                SELECT * FROM servers WHERE cfxLicense = ?
             "#,
         )
         .bind(license)
-        .fetch_optional(&self.db.pool)
+        .fetch_all(&self.db.pool)
         .await
         .unwrap()
     }

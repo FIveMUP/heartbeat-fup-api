@@ -1,7 +1,7 @@
 use sqlx::FromRow;
 use chrono::{DateTime, Local};
 
-#[derive(Debug, FromRow)]
+#[derive(Debug, Clone, FromRow)]
 pub struct StockAccount {
     pub id: Option<String>,
     pub owner: Option<String>,
