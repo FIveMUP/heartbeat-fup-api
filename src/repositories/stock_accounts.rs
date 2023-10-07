@@ -1,5 +1,3 @@
-use tracing::info;
-
 use crate::{config::Database, entities::StockAccount};
 use std::sync::Arc;
 

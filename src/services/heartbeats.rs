@@ -1,23 +1,24 @@
-use std::{sync::Arc, time::Duration};
-
-use crate::{config::Database, error::ServerError};
-use dashmap::DashMap;
+use crate::error::{AppResult, ServerError};
+use axum::http::HeaderValue;
 use hyper::header::USER_AGENT;
-use reqwest::header::{HeaderMap, CONTENT_TYPE};
-use tracing::info;
+use reqwest::{
+    header::{HeaderMap, CONTENT_TYPE},
+    Client, Proxy,
+};
+use std::time::Duration;
+use tracing::error;
+
 #[derive(Clone)]
 pub struct HeartbeatService {
-    db: Arc<Database>,
-    req_client: reqwest::Client,
+    req_client: Client,
 }
 
 impl HeartbeatService {
-    pub fn new(db: &Arc<Database>) -> Self {
+    pub fn new() -> Self {
         Self {
-            db: db.clone(),
-            req_client: reqwest::Client::builder()
+            req_client: Client::builder()
                 .proxy(
-                    reqwest::Proxy::http(
+                    Proxy::http(
                         "https://cristianrg36:Z36BXSuHWddm3QCm@proxy.packetstream.io:31111",
                     )
                     .unwrap(),
@@ -27,43 +28,44 @@ impl HeartbeatService {
                 .unwrap(),
         }
     }
-
     pub async fn send_entitlement(
         &self,
         machine_hash: &str,
         entitlement_id: &str,
-    ) -> Result<bool, ServerError> {
+    ) -> AppResult<bool> {
         let machine_hash_encoded = urlencoding::encode(machine_hash);
-        let entitlement_heartbeat = format!(
-            "entitlementId={}&f=%7b%7d&gameName=gta5&h2=YyMyxwNpROOEdyxjBu%2bNls1LHzPzx1zTEX7RtDmwD5Eb2MPVgeWNFbNZC3YfGgUnbriTU2jsl7jO0SQ9%2bmDqmU1rLf075r4bxMuKLjcUu2IPy3zVXd2ni2xVJJw8%2bFOoWqaTKIQGggBYEBEBRNOsFNjp6TLqbCwKiqMmc7rl8pLj6SCUm1MpNcBg%2fIE15VmMk4erFf26PdrA4GpAKAP%2fdsM9QaY1GbBnwM4V4xWl8EtLWFPF0XW9xePpm5ZPOjU3OfMAZ2eTF6cNkNsxAGHIMB4VTaKLGWoWmRToEEzbh9wTebY97mYeFdtqF8L%2bnNPVv6y0k4szAwdbInJ2oE73iFj5mZIKLGxqKtNGg9r10nJm2Bk1bTchSWTKlsI%2ffN1vvG6g1fxNDf5%2bJyqGnhktaEMt7L8JTxpgHPuAKtAN795kAM%2fZRgHUUqJzxnH4Ps3jSaMAt5eDpzfdkGvhADFIMMfSEEZ6WqQyvwRw85arnc6IgNYKFlqzGnpsHcWE13elDaRPbgNfMwT7U4Jk31vcfSsadYeqN6Ngad6CeF9zty7GWMklfWcRuaRqtiJvPI3%2fhGymZwPdFHsWvsBEFcbKTWVukjVzaXbuuOH81iY%2fCw7Mbq9A%2f%2fERGFNFW5HXUd9WCZsUooXHJcjVuczxO0BgQLfyEGaaemQSr0RwA3abTe7l5nY4wMC%2fJKkB1AKURTTsJcHhbK0Xrz14b5XOZIZDNlUGQpXweFTMWeualdOAxGUvDnnD0%2fqIZ39zjnPdulZUxCzGt%2fPt1Mt2nsAEJaYq%2fSLBqoahs9UtgGs%2fX9PAqqsnJdsRJ%2bZXKA%2fGfeBr58TCQsDJ8B1CCkqqsmAjItskmOY6w2%2fNGhQw7enImzXwvO4%3d&machineHash=AQAL&machineHashIndex={}&rosId=1234",
-            entitlement_id,
-            machine_hash_encoded
-        );
 
-        let mut headers = HeaderMap::new();
-
-        headers.insert(
-            CONTENT_TYPE,
-            "application/x-www-form-urlencoded".parse().unwrap(),
-        );
-        headers.insert(
-            USER_AGENT,
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.3".parse().unwrap(),
-        );
-
-        let response = self
-            .req_client
+        let response = self.req_client
             .post("https://lambda.fivem.net/api/validate/entitlement")
-            .headers(headers)
-            .body(entitlement_heartbeat)
-            .send()
-            .await?;
+            .headers(
+                HeaderMap::from_iter(
+                    vec![
+                        (
+                            CONTENT_TYPE,
+                            HeaderValue::from_static("application/x-www-form-urlencoded"),
+                        ),
+                        (
+                            USER_AGENT,
+                            HeaderValue::from_static(
+                                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.3"
+                            ),
+                        )
+                    ]
+                )
+            )
+            .body(
+                format!(
+                    "entitlementId={entitlement_id}&f=%7b%7d&gameName=gta5&h2=YyMyxwNpROOEdyxjBu%2bNls1LHzPzx1zTEX7RtDmwD5Eb2MPVgeWNFbNZC3YfGgUnbriTU2jsl7jO0SQ9%2bmDqmU1rLf075r4bxMuKLjcUu2IPy3zVXd2ni2xVJJw8%2bFOoWqaTKIQGggBYEBEBRNOsFNjp6TLqbCwKiqMmc7rl8pLj6SCUm1MpNcBg%2fIE15VmMk4erFf26PdrA4GpAKAP%2fdsM9QaY1GbBnwM4V4xWl8EtLWFPF0XW9xePpm5ZPOjU3OfMAZ2eTF6cNkNsxAGHIMB4VTaKLGWoWmRToEEzbh9wTebY97mYeFdtqF8L%2bnNPVv6y0k4szAwdbInJ2oE73iFj5mZIKLGxqKtNGg9r10nJm2Bk1bTchSWTKlsI%2ffN1vvG6g1fxNDf5%2bJyqGnhktaEMt7L8JTxpgHPuAKtAN795kAM%2fZRgHUUqJzxnH4Ps3jSaMAt5eDpzfdkGvhADFIMMfSEEZ6WqQyvwRw85arnc6IgNYKFlqzGnpsHcWE13elDaRPbgNfMwT7U4Jk31vcfSsadYeqN6Ngad6CeF9zty7GWMklfWcRuaRqtiJvPI3%2fhGymZwPdFHsWvsBEFcbKTWVukjVzaXbuuOH81iY%2fCw7Mbq9A%2f%2fERGFNFW5HXUd9WCZsUooXHJcjVuczxO0BgQLfyEGaaemQSr0RwA3abTe7l5nY4wMC%2fJKkB1AKURTTsJcHhbK0Xrz14b5XOZIZDNlUGQpXweFTMWeualdOAxGUvDnnD0%2fqIZ39zjnPdulZUxCzGt%2fPt1Mt2nsAEJaYq%2fSLBqoahs9UtgGs%2fX9PAqqsnJdsRJ%2bZXKA%2fGfeBr58TCQsDJ8B1CCkqqsmAjItskmOY6w2%2fNGhQw7enImzXwvO4%3d&machineHash=AQAL&machineHashIndex={machine_hash_encoded}&rosId=1234"
+                )
+            )
+            .send().await
+            .unwrap();
 
         let response_status = response.status();
         if response_status.is_success() {
             Ok(true)
         } else {
-            eprintln!(
+            error!(
                 "Failed to send entitlement heartbeat. HTTP status: {}",
                 response_status
             );
@@ -76,8 +78,7 @@ impl HeartbeatService {
         machine_hash: &str,
         entitlement_id: &str,
         sv_license_key_token: &str,
-    ) -> Result<bool, ServerError> {
-
+    ) -> AppResult<bool> {
         self.send_entitlement(machine_hash, entitlement_id).await?;
 
         let ticket_heartbeat = format!(
@@ -87,31 +88,36 @@ impl HeartbeatService {
             entitlement_id
         );
 
-        info!("Sending heartbeat: {}", ticket_heartbeat);
-
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            CONTENT_TYPE,
-            "application/x-www-form-urlencoded".parse().unwrap(),
-        );
-        headers.insert(
-            USER_AGENT,
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.3".parse().unwrap(),
-        );
-
-        let response = self
-            .req_client
+        let response = self.req_client
             .post("https://lambda.fivem.net/api/ticket/create")
-            .headers(headers)
+            .headers(
+                HeaderMap::from_iter(
+                    vec![
+                        (
+                            CONTENT_TYPE,
+                            HeaderValue::from_static("application/x-www-form-urlencoded"),
+                        ),
+                        (
+                            USER_AGENT,
+                            HeaderValue::from_static(
+                                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.3"
+                            ),
+                        )
+                    ]
+                )
+            )
             .body(ticket_heartbeat)
-            .send()
-            .await?;
+            .send().await
+            .unwrap();
 
         if response.status().is_success() {
-            println!("Response: {:?}", response.text().await?);
-            return Ok(true);
+            Ok(true)
         } else {
-            return Err(ServerError::NOT_FOUND);
+            error!(
+                "Failed to send ticket heartbeat. HTTP status: {}",
+                response.status()
+            );
+            Err(ServerError::NotFound)?
         }
     }
 }
