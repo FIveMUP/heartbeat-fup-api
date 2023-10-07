@@ -1,3 +1,5 @@
+use tracing::info;
+
 use crate::config::Database;
 use std::sync::Arc;
 
@@ -12,6 +14,7 @@ impl ServerRepository {
     }
 
     pub async fn find_by_license(&self, license: &str) -> Option<(String,)> {
+        info!("Finding server by license: {}", license);
         sqlx::query_as::<_, (String,)>(
             r#"
                 SELECT cfxLicense FROM servers WHERE cfxLicense = ?

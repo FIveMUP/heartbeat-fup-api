@@ -1,3 +1,5 @@
+use tracing::info;
+
 use crate::{config::Database, entities::StockAccount};
 use std::sync::Arc;
 
@@ -14,7 +16,7 @@ impl StockAccountRepository {
     pub async fn find_all_by_server(&self, server: &str) -> Vec<StockAccount> {
         sqlx::query_as::<_, StockAccount>(
             r#"
-                SELECT (id, owner, expireOn, entitlementId, machineHash) FROM stock_accounts WHERE assignedServer = ?
+                SELECT id, owner, expireOn, entitlementId, machineHash FROM stock_accounts WHERE assignedServer = ?
             "#
         )
         .bind(server)

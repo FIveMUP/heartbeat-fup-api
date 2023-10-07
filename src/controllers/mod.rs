@@ -11,6 +11,7 @@ pub(crate) async fn heartbeat(
 ) -> AppResult<()> {
     if !state.threads_service.get(&cfx_license) {
         let Some(_) = state.server_repository.find_by_license(&cfx_license).await else {
+            // send response hello world
             Err(ServerError::NotFound)?
         };
 

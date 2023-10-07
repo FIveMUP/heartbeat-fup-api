@@ -7,7 +7,7 @@ use std::{
 use tokio::task::JoinHandle;
 use tracing::info;
 
-const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(10);
+const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(360);
 
 #[derive(Clone)]
 pub struct ThreadService {
@@ -55,9 +55,7 @@ impl ThreadService {
         info!("Spawning thread {}", key);
 
         tokio::spawn(async move {
-            let stock_accounts = stock_repo.find_all_by_server(&key).await;
-
-            info!("{} stock accounts found", stock_accounts.len());
+            
 
             /*
 
@@ -77,22 +75,26 @@ impl ThreadService {
             // new_players = los jugadores nuevos
             // stock_accounts -> assignedPlayers
 
-            // loop {
-            //     tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-            //     let now = Instant::now();
-            //     let last_heartbeat = heartbeat.get(&key).unwrap();
+            loop {
+                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                let now = Instant::now();
+                let last_heartbeat = heartbeat.get(&key).unwrap();
 
-            //     if now.duration_since(*last_heartbeat).gt(&HEARTBEAT_TIMEOUT) {
-            //         info!("Thread {} is dead", key);
-            //         // Thread is dead
+                let stock_accounts = stock_repo.find_all_by_server(&key).await;
 
-            //         threads.remove(&key);
+                info!("{} stock accounts found", stock_accounts.len());
 
-            //         break;
-            //     }
+                if now.duration_since(*last_heartbeat).gt(&HEARTBEAT_TIMEOUT) {
+                    info!("Thread {} is dead", key);
+                    // Thread is dead
 
-            //     //
-            // }
+                    threads.remove(&key);
+
+                    break;
+                }
+
+                //
+            }
         })
     }
 }
