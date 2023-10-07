@@ -28,6 +28,7 @@ tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
 sqlx = { version = "0.7.2", features = ["mysql", "runtime-tokio"] }
 hyper = { version = "0.14.27", features = ["full"] }
 mimalloc = "0.1.39"
+dashmap = "5.5.3"
 
 [profile.release]
 debug = 0

@@ -12,6 +12,7 @@ mod controllers;
 mod error;
 mod response;
 mod routes;
+mod services;
 mod states;
 
 #[tokio::main]
