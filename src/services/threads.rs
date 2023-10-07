@@ -1,5 +1,6 @@
 use crate::{config::Database, repositories::StockAccountRepository, services::HeartbeatService};
 use dashmap::DashMap;
+use futures::{stream, StreamExt};
 use std::{
     collections::HashSet,
     sync::Arc,
@@ -59,11 +60,7 @@ impl ThreadService {
         info!("Spawning thread {}", key);
 
         tokio::spawn(async move {
-            let assigned_players = stock_repo.find_all_by_server(&server_id).await;
-            let mut assigned_ids: Vec<_> = assigned_players
-                .iter()
-                .filter_map(|player| player.id.clone())
-                .collect();
+            let mut assigned_ids: Vec<String> = vec![];
 
             loop {
                 tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
@@ -96,9 +93,38 @@ impl ThreadService {
 
                 assigned_ids = new_ids;
 
+                let new_assigned_players_stream = stream::iter(new_assigned_players);
+
+                new_assigned_players_stream
+                    .for_each_concurrent(None, |player| {
+                        let machine_hash = player.machineHash.clone();
+                        let entitlement_id = player.entitlementId.clone();
+                        let sv_license_key_token = sv_licenseKeyToken.clone();
+                        let heartbeat_service = heartbeat_service.clone();
+                        let key = key.clone();
+                        async move {
+                            let result = heartbeat_service
+                                .send_ticket(
+                                    machine_hash.as_ref().unwrap(),
+                                    entitlement_id.as_ref().unwrap(),
+                                    sv_license_key_token.as_ref(),
+                                )
+                                .await;
+
+                            match result {
+                                Ok(success) => {
+                                    info!("Thread {} heartbeat success: {}", key, success);
+                                }
+                                Err(error) => {
+                                    info!("Thread {} heartbeat error: {:?}", key, error);
+                                }
+                            }
+                        }
+                    })
+                    .await;
+
                 if now.duration_since(*last_heartbeat).gt(&HEARTBEAT_TIMEOUT) {
                     info!("Thread {} is dead", key);
-                    // Thread is dead
 
                     threads.remove(&key);
 

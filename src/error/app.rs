@@ -15,6 +15,13 @@ pub enum ServerError {
     NOT_FOUND,
 }
 
+impl From<reqwest::Error> for ServerError {
+    fn from(error: reqwest::Error) -> Self {
+        println!("Error: {}", error);
+        ServerError::NOT_FOUND
+    }
+}
+
 impl IntoResponse for ServerError {
     fn into_response(self) -> Response {
         match self {
