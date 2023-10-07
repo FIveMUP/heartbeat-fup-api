@@ -1,4 +1,4 @@
-use crate::config::Database;
+use crate::{config::Database, repositories::StockAccountRepository};
 use dashmap::DashMap;
 use std::{
     sync::Arc,
@@ -45,29 +45,54 @@ impl ThreadService {
     #[inline(always)]
     fn tokio_thread(&self, key: &str) -> JoinHandle<()> {
         let key = key.to_owned();
-        // let db = self.db.clone();
-        let threads = self.threads.clone();
+        let db = self.db.clone();
         let heartbeat = self.heartbeat.clone();
+        let stock_repo = StockAccountRepository::new(&db);
+        let threads = self.threads.clone();
 
         self.heartbeat.insert(key.clone(), Instant::now());
 
         info!("Spawning thread {}", key);
 
         tokio::spawn(async move {
-            loop {
-                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-                let now = Instant::now();
-                let last_heartbeat = heartbeat.get(&key).unwrap();
+            let stock_accounts = stock_repo.find_all_by_server(&key).await;
 
-                if now.duration_since(*last_heartbeat).gt(&HEARTBEAT_TIMEOUT) {
-                    info!("Thread {} is dead", key);
-                    // Thread is dead
+            info!("{} stock accounts found", stock_accounts.len());
 
-                    threads.remove(&key);
+            /*
 
-                    break;
-                }
-            }
+               assignedPlayers: [
+               {
+                   id: "okki_3a",
+                   name: "juan",
+
+               },
+               ]
+
+               Comparar Stock accounts devuelve los que no estaban añadidos
+
+
+            */
+            // Select * stock_accounts where assignedServer -> ["pepe"] -> Borrar juan de la assignedPlayers
+            // new_players = los jugadores nuevos
+            // stock_accounts -> assignedPlayers
+
+            // loop {
+            //     tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            //     let now = Instant::now();
+            //     let last_heartbeat = heartbeat.get(&key).unwrap();
+
+            //     if now.duration_since(*last_heartbeat).gt(&HEARTBEAT_TIMEOUT) {
+            //         info!("Thread {} is dead", key);
+            //         // Thread is dead
+
+            //         threads.remove(&key);
+
+            //         break;
+            //     }
+
+            //     //
+            // }
         })
     }
 }
