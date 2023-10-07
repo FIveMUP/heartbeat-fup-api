@@ -1,19 +1,28 @@
-use super::ServerError;
-use axum::response::{IntoResponse, Response};
+use crate::states::GlobalState;
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    response::IntoResponse,
+    response::Response,
+    Json,
+};
+use serde_json::json;
 use thiserror::Error;
 
-pub type AppResult<T> = Result<T, AppError>;
-
-#[derive(Debug, Error)]
-pub enum AppError {
-    #[error(transparent)]
-    Server(#[from] ServerError),
+#[derive(Error, Debug)]
+pub enum ServerError {
+    #[error("Server not found")]
+    NOT_FOUND,
 }
 
-impl IntoResponse for AppError {
+impl IntoResponse for ServerError {
     fn into_response(self) -> Response {
         match self {
-            AppError::Server(e) => e.into_response(),
+            ServerError::NOT_FOUND => (
+                StatusCode::CONFLICT,
+                Json(json!({"status": "Server not found"})),
+            )
+                .into_response(),
         }
     }
 }

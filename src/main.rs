@@ -12,7 +12,6 @@ mod controllers;
 mod entities;
 mod error;
 mod repositories;
-mod response;
 mod routes;
 mod services;
 mod states;

@@ -30,6 +30,7 @@ hyper = { version = "0.14.27", features = ["full"] }
 mimalloc = "0.1.39"
 dashmap = "5.5.3"
 chrono = "0.4.31"
+serde_json = "1.0.107"
 
 [profile.release]
 debug = 0
