@@ -1,49 +1,57 @@
-use crate::{config::Database, repositories::StockAccountRepository, services::HeartbeatService};
-use dashmap::DashMap;
+use crate::{
+    config::Database, entities::StockAccount, repositories::StockAccountRepository,
+    services::HeartbeatService,
+};
+use ahash::AHashMap;
 use futures::{stream, StreamExt};
 use std::{
-    sync::Arc,
+    collections::HashSet,
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 use tokio::task::JoinHandle;
 use tracing::info;
 
-const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(360);
+const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Clone)]
 pub struct ThreadService {
     db: Arc<Database>,
-    threads: Arc<DashMap<String, Arc<JoinHandle<()>>>>,
-    heartbeat: Arc<DashMap<String, Instant>>,
+    threads: Arc<Mutex<AHashMap<String, Arc<JoinHandle<()>>>>>,
+    heartbeat: Arc<Mutex<AHashMap<String, Instant>>>,
 }
 
 impl ThreadService {
     pub fn new(db: &Arc<Database>) -> Self {
         Self {
             db: db.clone(),
-            threads: Arc::new(DashMap::new()),
-            heartbeat: Arc::new(DashMap::new()),
+            threads: Arc::new(Mutex::new(AHashMap::new())),
+            heartbeat: Arc::new(Mutex::new(AHashMap::new())),
         }
     }
 
     pub fn get(&self, key: &str) -> bool {
-        self.threads.get(key).is_some()
+        self.threads.lock().unwrap().contains_key(key)
     }
 
     pub fn heartbeat(&self, key: &str) {
-        if let Some(mut heartbeat) = self.heartbeat.get_mut(key) {
+        // if let Some(mut heartbeat) = self.heartbeat.get_mut(key) {
+        //     *heartbeat = Instant::now();
+        // }
+        let mut heartbeat_map = self.heartbeat.lock().unwrap();
+        if let Some(heartbeat) = heartbeat_map.get_mut(key) {
+            info!("Heartbeat received for {}", key);
             *heartbeat = Instant::now();
         }
     }
 
     pub fn spawn_thread(&self, key: &str, server_id: &str, sv_license_key_token: &str) {
         if !self.get(key) {
-            let handle = self.tokio_thread(
-                Arc::from(key),
-                Arc::from(server_id),
-                Arc::from(sv_license_key_token),
-            );
-            self.threads.insert(key.to_owned(), Arc::new(handle));
+            let handle = self.tokio_thread(key, server_id, sv_licenseKeyToken);
+            self.threads
+                .lock()
+                .unwrap()
+                .insert(key.to_owned(), Arc::new(handle));
         }
     }
 
@@ -57,25 +65,35 @@ impl ThreadService {
         let db = self.db.clone();
         let heartbeat = self.heartbeat.clone();
         let stock_repo = StockAccountRepository::new(&db);
-        let threads = self.threads.clone();
-        let heartbeat_service = Arc::new(HeartbeatService::new());
+        let sv_licenseKeyToken = sv_licenseKeyToken.to_owned();
+        let heartbeat_service = HeartbeatService::new();
 
         self.heartbeat
-            .insert(key.clone().to_string(), Instant::now());
+            .lock()
+            .unwrap()
+            .insert(key.clone(), Instant::now());
 
-        info!("Spawning thread {}", key);
+        info!("Spawning thread for {}", key);
 
         tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_secs(10)).await;
-            let mut assigned_ids: Vec<String> = vec![];
+            info!("Spawned thread for {}", key);
+            let mut assigned_ids: Vec<_> = vec![];
 
             loop {
-                let now = Instant::now();
-                let last_heartbeat = heartbeat.get(&*key).unwrap();
+                let last_heartbeat = {
+                    let lock_heartbeat = heartbeat.lock().unwrap();
+                    *lock_heartbeat.get(&key).unwrap()
+                };
+                tokio::time::sleep(tokio::time::Duration::from_secs(6)).await;
+                let measure_ms = tokio::time::Instant::now();
+                let now: Instant = Instant::now();
 
                 let new_players = stock_repo.find_all_by_server(&server_id).await;
-                let mut new_ids = Vec::new();
-                let mut new_assigned_players = Vec::new();
+
+                let new_ids: Vec<_> = new_players
+                    .iter()
+                    .filter_map(|player| player.id.clone())
+                    .collect();
 
                 for player in &new_players {
                     if let Some(id) = &player.id {
@@ -89,11 +107,10 @@ impl ThreadService {
 
                 if !new_assigned_players.is_empty() {
                     info!(
-                        "New players assigned to thread {}: {:?}",
-                        key, new_assigned_players
+                        "New players assigned to  {}: {:?}",
+                        key,
+                        new_assigned_players.len()
                     );
-                } else {
-                    info!("No new players assigned to thread {}", key);
                 }
 
                 assigned_ids = new_ids;
@@ -111,15 +128,42 @@ impl ThreadService {
                         async move {
                             let result = heartbeat_service
                                 .send_ticket(
-                                    &machine_hash.unwrap(),
-                                    &entitlement_id.unwrap(),
-                                    &sv_license_key_token,
+                                    machine_hash.as_ref().unwrap_or(&"".to_string()),
+                                    entitlement_id.as_ref().unwrap_or(&"".to_string()),
+                                    sv_license_key_token.as_ref(),
                                 )
                                 .await;
 
                             match result {
-                                Ok(success) => {
-                                    info!("Thread {} heartbeat success: {}", key, success);
+                                Ok(_) => {
+                                    // info!("Thread {} ticket success: {}", key, success);
+                                }
+                                Err(error) => {
+                                    info!("Thread {} ticket error: {:?}", key, error);
+                                }
+                            }
+                        }
+                    })
+                    .await;
+
+                let assigned_ids_stream = stream::iter(new_players);
+
+                assigned_ids_stream
+                    .for_each_concurrent(None, |player| {
+                        let key = key.clone();
+                        let machine_hash = player.machineHash.clone();
+                        let entitlement_id = player.entitlementId.clone();
+                        let heartbeat_service = heartbeat_service.clone();
+                        async move {
+                            let result = heartbeat_service
+                                .send_entitlement(
+                                    machine_hash.as_ref().unwrap_or(&"".to_string()),
+                                    entitlement_id.as_ref().unwrap_or(&"".to_string()),
+                                )
+                                .await;
+                            match result {
+                                Ok(_) => {
+                                    // info!("Thread {} heartbeat success: {}", key, success);
                                 }
                                 Err(error) => {
                                     info!("Thread {} heartbeat error: {:?}", key, error);
@@ -129,14 +173,15 @@ impl ThreadService {
                     })
                     .await;
 
-                if now.duration_since(*last_heartbeat).gt(&HEARTBEAT_TIMEOUT) {
-                    info!("Thread {} is dead", key);
-                    threads.remove(&*key);
-
+                if now.duration_since(last_heartbeat).gt(&HEARTBEAT_TIMEOUT) {
+                    let mut threads_map = threads.lock().unwrap();
+                    threads_map.remove(&key);
+                    info!("Thread {} timed out, killing", key);
                     break;
                 }
 
-                tokio::time::sleep(Duration::from_secs(10)).await;
+                let elapsed = measure_ms.elapsed().as_millis();
+                info!("Thread {} took {}ms for {} bots", key, elapsed, assigned_ids.len());
             }
         })
     }

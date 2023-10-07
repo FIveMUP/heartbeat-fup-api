@@ -13,15 +13,14 @@ impl ServerRepository {
         Self { db: db.clone() }
     }
 
-    pub async fn find_by_license(&self, license: &str) -> Option<Server> {
-        info!("Finding server by license: {}", license);
+    pub async fn find_by_license(&self, license: &str) -> Vec<Server> {
         sqlx::query_as::<_, Server>(
             r#"
                 SELECT * FROM servers WHERE cfxLicense = ?
             "#,
         )
         .bind(license)
-        .fetch_optional(&self.db.pool)
+        .fetch_all(&self.db.pool)
         .await
         .unwrap()
     }
