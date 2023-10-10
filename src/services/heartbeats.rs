@@ -9,7 +9,7 @@ use reqwest::{
 use std::time::Duration;
 use tracing::error;
 
-const FIVEM_URL: &str = "https://lambda.fivem.net/api/";
+const FIVEM_URL: &str = "https://lambda.fivem.net/api";
 const PROXY_URL: &str = "http://customer-fivemup:FiveMUP2k23HappySex@dc.pr.oxylabs.io:10000";
 static HEADERS: Lazy<HeaderMap> = Lazy::new(|| {
     HeaderMap::from_iter(
