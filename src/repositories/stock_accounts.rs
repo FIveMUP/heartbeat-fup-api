@@ -11,15 +11,16 @@ impl StockAccountRepository {
         Self { db: db.clone() }
     }
 
-    pub async fn find_all_by_server(&self, server: &str) -> Vec<StockAccount> {
-        sqlx::query_as::<_, StockAccount>(
+    pub async fn find_all_by_server(&self, server: &str) -> Vec<Arc<StockAccount>> {
+        let accounts = sqlx::query_as::<_, StockAccount>(
             r#"
                 SELECT id, owner, expireOn, entitlementId, machineHash FROM stock_accounts WHERE assignedServer = ?
             "#
         )
         .bind(server)
         .fetch_all(&self.db.pool)
-        .await
-        .unwrap()
+        .await.unwrap();
+
+        accounts.into_iter().map(Arc::new).collect()
     }
 }

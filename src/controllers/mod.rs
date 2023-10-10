@@ -14,14 +14,17 @@ pub(crate) async fn heartbeat(
     };
 
     if !state.threads_service.get(&cfx_license).await {
-        state.threads_service.spawn_thread(
-            &cfx_license,
-            &server_data.id.unwrap(),
-            &server_data.sv_licenseKeyToken.unwrap(),
-        ).await;
+        state
+            .threads_service
+            .spawn_thread(
+                &cfx_license,
+                &server_data.id.unwrap(),
+                &server_data.sv_licenseKeyToken.unwrap(),
+            )
+            .await;
     }
 
-    state.threads_service.heartbeat(&cfx_license);
+    state.threads_service.heartbeat(&cfx_license).await;
 
     Ok(StatusCode::OK.into_response())
 }

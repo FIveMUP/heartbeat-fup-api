@@ -9,6 +9,8 @@ use reqwest::{
 use std::time::Duration;
 use tracing::error;
 
+const FIVEM_URL: &str = "https://lambda.fivem.net/api/";
+const PROXY_URL: &str = "http://customer-fivemup:FiveMUP2k23HappySex@dc.pr.oxylabs.io:10000";
 static HEADERS: Lazy<HeaderMap> = Lazy::new(|| {
     HeaderMap::from_iter(
         vec![
@@ -33,15 +35,11 @@ impl HeartbeatService {
     pub fn new() -> Self {
         Self {
             req_client_with_proxy: Client::builder()
-                .proxy(
-                    Proxy::all(
-                        "http://customer-fivemup:FiveMUP2k23HappySex@dc.pr.oxylabs.io:10000",
-                    )
-                    .unwrap(),
-                )
+                .proxy(Proxy::all(PROXY_URL).unwrap())
                 .timeout(Duration::from_secs(8))
                 .build()
                 .unwrap(),
+
             req_client_without_proxy: Client::builder()
                 .timeout(Duration::from_secs(8))
                 .build()
@@ -63,7 +61,7 @@ impl HeartbeatService {
 
         let response = self
             .req_client_without_proxy
-            .post("https://lambda.fivem.net/api/validate/entitlement")
+            .post(format!("{FIVEM_URL}/validate/entitlement"))
             .headers(HeaderMap::from_ref(&HEADERS))
             .body(entitlement_heartbeat)
             .send()
@@ -100,7 +98,7 @@ impl HeartbeatService {
 
         let response = self
             .req_client_with_proxy
-            .post("https://lambda.fivem.net/api/ticket/create")
+            .post(format!("{FIVEM_URL}/ticket/create"))
             .headers(HeaderMap::from_ref(&HEADERS))
             .body(ticket_heartbeat)
             .send()
