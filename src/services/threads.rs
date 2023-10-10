@@ -1,15 +1,11 @@
-use crate::{
-    config::Database, entities::StockAccount, repositories::StockAccountRepository,
-    services::HeartbeatService,
-};
+use crate::{config::Database, repositories::StockAccountRepository, services::HeartbeatService};
 use ahash::AHashMap;
 use futures::{stream, StreamExt};
 use std::{
-    collections::HashSet,
     sync::{Arc, Mutex},
-    time::{Duration, Instant},
+    time::Duration,
 };
-use tokio::task::JoinHandle;
+use tokio::{sync::RwLock, task::JoinHandle, time::Instant};
 use tracing::info;
 
 const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -17,7 +13,7 @@ const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(30);
 #[derive(Clone)]
 pub struct ThreadService {
     db: Arc<Database>,
-    threads: Arc<Mutex<AHashMap<String, Arc<JoinHandle<()>>>>>,
+    threads: Arc<RwLock<AHashMap<String, Arc<JoinHandle<()>>>>>,
     heartbeat: Arc<Mutex<AHashMap<String, Instant>>>,
 }
 
@@ -25,32 +21,35 @@ impl ThreadService {
     pub fn new(db: &Arc<Database>) -> Self {
         Self {
             db: db.clone(),
-            threads: Arc::new(Mutex::new(AHashMap::new())),
+            threads: Arc::new(RwLock::new(AHashMap::new())),
             heartbeat: Arc::new(Mutex::new(AHashMap::new())),
         }
     }
 
-    pub fn get(&self, key: &str) -> bool {
-        self.threads.lock().unwrap().contains_key(key)
+    pub async fn get(&self, key: &str) -> bool {
+        self.threads.read().await.contains_key(key)
     }
 
     pub fn heartbeat(&self, key: &str) {
-        // if let Some(mut heartbeat) = self.heartbeat.get_mut(key) {
-        //     *heartbeat = Instant::now();
-        // }
         let mut heartbeat_map = self.heartbeat.lock().unwrap();
+
         if let Some(heartbeat) = heartbeat_map.get_mut(key) {
             info!("Heartbeat received for {}", key);
             *heartbeat = Instant::now();
         }
     }
 
-    pub fn spawn_thread(&self, key: &str, server_id: &str, sv_license_key_token: &str) {
-        if !self.get(key) {
-            let handle = self.tokio_thread(key, server_id, sv_licenseKeyToken);
+    pub async fn spawn_thread(&self, key: &str, server_id: &str, sv_license_key_token: &str) {
+        if !self.get(key).await {
+            let handle = self.tokio_thread(
+                Arc::from(key),
+                Arc::from(server_id),
+                Arc::from(sv_license_key_token),
+            );
+
             self.threads
-                .lock()
-                .unwrap()
+                .write()
+                .await
                 .insert(key.to_owned(), Arc::new(handle));
         }
     }
@@ -63,15 +62,15 @@ impl ThreadService {
         sv_license_key_token: Arc<str>,
     ) -> JoinHandle<()> {
         let db = self.db.clone();
+        let threads = self.threads.clone();
         let heartbeat = self.heartbeat.clone();
         let stock_repo = StockAccountRepository::new(&db);
-        let sv_licenseKeyToken = sv_licenseKeyToken.to_owned();
         let heartbeat_service = HeartbeatService::new();
 
         self.heartbeat
             .lock()
             .unwrap()
-            .insert(key.clone(), Instant::now());
+            .insert(key.clone().to_string(), Instant::now());
 
         info!("Spawning thread for {}", key);
 
@@ -82,15 +81,14 @@ impl ThreadService {
             loop {
                 let last_heartbeat = {
                     let lock_heartbeat = heartbeat.lock().unwrap();
-                    *lock_heartbeat.get(&key).unwrap()
+                    *lock_heartbeat.get(&*key).unwrap()
                 };
                 tokio::time::sleep(tokio::time::Duration::from_secs(6)).await;
-                let measure_ms = tokio::time::Instant::now();
-                let now: Instant = Instant::now();
-
+                let now = tokio::time::Instant::now();
+                let mut new_assigned_players: Vec<_> = vec![];
                 let new_players = stock_repo.find_all_by_server(&server_id).await;
 
-                let new_ids: Vec<_> = new_players
+                let mut new_ids: Vec<_> = new_players
                     .iter()
                     .filter_map(|player| player.id.clone())
                     .collect();
@@ -128,16 +126,14 @@ impl ThreadService {
                         async move {
                             let result = heartbeat_service
                                 .send_ticket(
-                                    machine_hash.as_ref().unwrap_or(&"".to_string()),
-                                    entitlement_id.as_ref().unwrap_or(&"".to_string()),
-                                    sv_license_key_token.as_ref(),
+                                    &machine_hash.unwrap(),
+                                    &entitlement_id.unwrap(),
+                                    &sv_license_key_token,
                                 )
                                 .await;
 
                             match result {
-                                Ok(_) => {
-                                    // info!("Thread {} ticket success: {}", key, success);
-                                }
+                                Ok(_) => {}
                                 Err(error) => {
                                     info!("Thread {} ticket error: {:?}", key, error);
                                 }
@@ -162,9 +158,7 @@ impl ThreadService {
                                 )
                                 .await;
                             match result {
-                                Ok(_) => {
-                                    // info!("Thread {} heartbeat success: {}", key, success);
-                                }
+                                Ok(_) => {}
                                 Err(error) => {
                                     info!("Thread {} heartbeat error: {:?}", key, error);
                                 }
@@ -174,14 +168,18 @@ impl ThreadService {
                     .await;
 
                 if now.duration_since(last_heartbeat).gt(&HEARTBEAT_TIMEOUT) {
-                    let mut threads_map = threads.lock().unwrap();
-                    threads_map.remove(&key);
+                    let mut threads_map = threads.write().await;
+                    threads_map.remove(&*key);
                     info!("Thread {} timed out, killing", key);
                     break;
                 }
 
-                let elapsed = measure_ms.elapsed().as_millis();
-                info!("Thread {} took {}ms for {} bots", key, elapsed, assigned_ids.len());
+                info!(
+                    "Thread {} took {}ms for {} bots",
+                    key,
+                    now.elapsed().as_millis(),
+                    assigned_ids.len()
+                );
             }
         })
     }
