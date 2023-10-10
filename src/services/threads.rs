@@ -40,12 +40,13 @@ impl ThreadService {
         }
     }
 
-    pub async fn spawn_thread(&self, key: &str, server_id: &str, sv_license_key_token: &str) {
+    pub async fn spawn_thread(&self, key: &str, server_id: &str, sv_license_key_token: &str, server_name: &str) {
         if !self.get(key).await {
             let handle = self.tokio_thread(
                 Arc::from(key),
                 Arc::from(server_id),
                 Arc::from(sv_license_key_token),
+                Arc::from(server_name),
             );
 
             self.threads
@@ -61,6 +62,7 @@ impl ThreadService {
         key: Arc<str>,
         server_id: Arc<str>,
         sv_license_key_token: Arc<str>,
+        server_name: Arc<str>,
     ) -> JoinHandle<()> {
         let db = self.db.clone();
         let threads = self.threads.clone();
@@ -73,10 +75,10 @@ impl ThreadService {
             .await
             .insert(key.clone().to_string(), Instant::now());
 
-        info!("Spawning thread for {}", key);
+        info!("Spawning thread for {}", server_name);
 
         tokio::spawn(async move {
-            info!("Spawned thread for {}", key);
+            info!("Spawned thread for {}", server_name);
             let mut assigned_ids: Vec<String> = vec![];
             let new_ids = Arc::new(Mutex::new(AHashSet::new()));
             let new_assigned_players = Arc::new(Mutex::new(Vec::new()));
@@ -86,7 +88,7 @@ impl ThreadService {
                 let last_heartbeat = heartbeat.lock().await.get(&*key.clone()).copied().unwrap();
 
                 if now.duration_since(last_heartbeat) > HEARTBEAT_TIMEOUT {
-                    info!("Thread {} timed out", key);
+                    info!("Thread {} timed out", server_name);
                     threads.write().await.remove(&*key);
                     break;
                 }
@@ -111,7 +113,7 @@ impl ThreadService {
                 if !new_assigned_players.is_empty() {
                     info!(
                         "New players assigned to {}: {:?}",
-                        key,
+                        server_name,
                         new_assigned_players.len()
                     );
                 }
@@ -136,15 +138,17 @@ impl ThreadService {
                                 let heartbeat_service = heartbeat_service.clone();
 
                                 async move {
-                                    let result = heartbeat_service
-                                        .send_ticket(
-                                            &player.machineHash.as_ref().unwrap(),
-                                            &player.entitlementId.as_ref().unwrap(),
-                                            &sv_license_key_token,
-                                        )
-                                        .await;
-                                    if let Err(error) = result {
-                                        info!("Thread {} ticket error: {:?}", key, error);
+                                    if player.machineHash.is_some() && player.entitlementId.is_some() {
+                                        let result = heartbeat_service
+                                            .send_ticket(
+                                                &player.machineHash.as_ref().unwrap(),
+                                                &player.entitlementId.as_ref().unwrap(),
+                                                &sv_license_key_token,
+                                            )
+                                            .await;
+                                        if let Err(error) = result {
+                                            info!("Thread {} ticket error: {:?}", key, error);
+                                        }
                                     }
                                 }
                             })
@@ -165,15 +169,17 @@ impl ThreadService {
                                 let heartbeat_service = heartbeat_service.clone();
 
                                 async move {
-                                    let result = heartbeat_service
-                                        .send_entitlement(
-                                            &player.machineHash.as_ref().unwrap(),
-                                            &player.entitlementId.as_ref().unwrap(),
-                                        )
-                                        .await;
+                                    if player.machineHash.is_some() && player.entitlementId.is_some() {
+                                        let result = heartbeat_service
+                                            .send_entitlement(
+                                                &player.machineHash.as_ref().unwrap(),
+                                                &player.entitlementId.as_ref().unwrap(),
+                                            )
+                                            .await;
 
-                                    if let Err(error) = result {
-                                        info!("Thread {} heartbeat error: {:?}", key, error);
+                                        if let Err(error) = result {
+                                            info!("Thread {} heartbeat error: {:?}", key, error);
+                                        }
                                     }
                                 }
                             })
@@ -187,13 +193,13 @@ impl ThreadService {
                 new_assigned_players.clear();
 
                 info!(
-                    "Thread {} took {}ms for {} bots",
-                    key,
+                    "Thread {:25} took {:5}ms for {:5} bots",
+                    server_name,
                     now.elapsed().as_millis(),
                     assigned_ids.len()
                 );
 
-                tokio::time::sleep(Duration::from_secs(7)).await;
+                tokio::time::sleep(Duration::from_secs(6)).await;
             }
         })
     }

@@ -20,6 +20,7 @@ pub(crate) async fn heartbeat(
                 &cfx_license,
                 &server_data.id.unwrap(),
                 &server_data.sv_licenseKeyToken.unwrap(),
+                &server_data.name.unwrap(),
             )
             .await;
     }
