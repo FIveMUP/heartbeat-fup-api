@@ -8,15 +8,9 @@ edition = "2021"
 [dependencies]
 dotenvy = "0.15.7"
 tokio = { version = "1.33.0", features = ["full"] }
-axum = { version = "0.6.20", features = [
-    "form",
-    "macros",
-    "multipart",
-    "headers",
-] }
+axum = { version = "0.6.20", features = ["macros", "multipart"] }
 tower = { version = "0.4.13", features = [
     "tokio",
-    "limit",
     "buffer",
     "timeout",
     "load-shed",
