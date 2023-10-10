@@ -35,7 +35,6 @@ impl ThreadService {
         let mut heartbeat_map = self.heartbeat.lock().await;
 
         if let Some(heartbeat) = heartbeat_map.get_mut(key) {
-            info!("Heartbeat received for {}", key);
             *heartbeat = Instant::now();
         }
     }
