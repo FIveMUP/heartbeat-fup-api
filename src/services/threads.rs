@@ -8,7 +8,7 @@ use std::{
 use tokio::{sync::RwLock, task::JoinHandle, time::Instant};
 use tracing::info;
 
-const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(30);
+const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Clone)]
 pub struct ThreadService {
@@ -140,10 +140,7 @@ impl ThreadService {
 
                         async move {
                             let result = heartbeat_service
-                                .send_entitlement(
-                                    &machine_hash.unwrap(),
-                                    &entitlement_id.unwrap(),
-                                )
+                                .send_entitlement(&machine_hash.unwrap(), &entitlement_id.unwrap())
                                 .await;
 
                             if let Err(error) = result {
