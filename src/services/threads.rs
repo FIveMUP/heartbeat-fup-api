@@ -1,5 +1,5 @@
 use crate::{config::Database, repositories::StockAccountRepository, services::HeartbeatService};
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use futures::{stream, StreamExt};
 use std::{
     sync::{Arc, Mutex},
@@ -79,24 +79,18 @@ impl ThreadService {
             let mut assigned_ids: Vec<_> = vec![];
 
             loop {
-                let last_heartbeat = {
-                    let lock_heartbeat = heartbeat.lock().unwrap();
-                    *lock_heartbeat.get(&*key).unwrap()
-                };
+                let last_heartbeat = heartbeat.lock().unwrap().get(&*key).copied().unwrap();
                 tokio::time::sleep(tokio::time::Duration::from_secs(6)).await;
                 let now = tokio::time::Instant::now();
-                let mut new_assigned_players: Vec<_> = vec![];
+
                 let new_players = stock_repo.find_all_by_server(&server_id).await;
 
-                let mut new_ids: Vec<_> = new_players
-                    .iter()
-                    .filter_map(|player| player.id.clone())
-                    .collect();
+                let mut new_assigned_players = Vec::new();
+                let mut new_ids = AHashSet::new();
 
                 for player in &new_players {
                     if let Some(id) = &player.id {
-                        new_ids.push(id.clone());
-
+                        new_ids.insert(id.clone());
                         if !assigned_ids.contains(id) {
                             new_assigned_players.push(player.clone());
                         }
@@ -105,17 +99,15 @@ impl ThreadService {
 
                 if !new_assigned_players.is_empty() {
                     info!(
-                        "New players assigned to  {}: {:?}",
+                        "New players assigned to {}: {:?}",
                         key,
                         new_assigned_players.len()
                     );
                 }
 
-                assigned_ids = new_ids;
+                assigned_ids = new_ids.into_iter().collect();
 
-                let new_assigned_players_stream = stream::iter(new_assigned_players);
-
-                new_assigned_players_stream
+                stream::iter(new_assigned_players)
                     .for_each_concurrent(None, |mut player| {
                         let key = key.clone();
                         let machine_hash = player.machineHash.take();
@@ -132,44 +124,37 @@ impl ThreadService {
                                 )
                                 .await;
 
-                            match result {
-                                Ok(_) => {}
-                                Err(error) => {
-                                    info!("Thread {} ticket error: {:?}", key, error);
-                                }
+                            if let Err(error) = result {
+                                info!("Thread {} ticket error: {:?}", key, error);
                             }
                         }
                     })
                     .await;
 
-                let assigned_ids_stream = stream::iter(new_players);
-
-                assigned_ids_stream
+                stream::iter(new_players)
                     .for_each_concurrent(None, |player| {
                         let key = key.clone();
                         let machine_hash = player.machineHash.clone();
                         let entitlement_id = player.entitlementId.clone();
                         let heartbeat_service = heartbeat_service.clone();
+
                         async move {
                             let result = heartbeat_service
                                 .send_entitlement(
-                                    machine_hash.as_ref().unwrap_or(&"".to_string()),
-                                    entitlement_id.as_ref().unwrap_or(&"".to_string()),
+                                    &machine_hash.unwrap(),
+                                    &entitlement_id.unwrap(),
                                 )
                                 .await;
-                            match result {
-                                Ok(_) => {}
-                                Err(error) => {
-                                    info!("Thread {} heartbeat error: {:?}", key, error);
-                                }
+
+                            if let Err(error) = result {
+                                info!("Thread {} heartbeat error: {:?}", key, error);
                             }
                         }
                     })
                     .await;
 
                 if now.duration_since(last_heartbeat).gt(&HEARTBEAT_TIMEOUT) {
-                    let mut threads_map = threads.write().await;
-                    threads_map.remove(&*key);
+                    threads.write().await.remove(&*key);
                     info!("Thread {} timed out, killing", key);
                     break;
                 }
