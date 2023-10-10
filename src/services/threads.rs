@@ -80,7 +80,6 @@ impl ThreadService {
 
             loop {
                 let last_heartbeat = heartbeat.lock().unwrap().get(&*key).copied().unwrap();
-                tokio::time::sleep(tokio::time::Duration::from_secs(6)).await;
                 let now = tokio::time::Instant::now();
 
                 let new_players = stock_repo.find_all_by_server(&server_id).await;
@@ -162,6 +161,8 @@ impl ThreadService {
                     now.elapsed().as_millis(),
                     assigned_ids.len()
                 );
+
+                tokio::time::sleep(Duration::from_secs(9)).await;
             }
         })
     }

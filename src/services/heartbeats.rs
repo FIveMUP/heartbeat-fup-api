@@ -91,8 +91,6 @@ impl HeartbeatService {
     ) -> Result<bool, ServerError> {
         self.send_entitlement(machine_hash, entitlement_id).await?;
 
-        tokio::time::sleep(Duration::from_secs(1)).await;
-
         let ticket_heartbeat = format!(
             "gameName=gta5&guid=148618792012444134&machineHash=AQAL&machineHashIndex={}&server=http%3a%2f%51.91.102.108%3a30120%2f&serverKeyToken={}&token={}",
             urlencoding::encode(machine_hash),
