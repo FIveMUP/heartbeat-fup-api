@@ -19,7 +19,7 @@ pub(crate) async fn heartbeat(
             .spawn_thread(
                 &cfx_license,
                 &server_data.id.unwrap(),
-                &server_data.sv_license_key_token.unwrap(),
+                &server_data.sv_licenseKeyToken.unwrap(),
                 &server_data.name.unwrap(),
             )
             .await;

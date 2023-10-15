@@ -139,13 +139,13 @@ impl ThreadService {
                                 let heartbeat_service = heartbeat_service.clone();
 
                                 async move {
-                                    if player.machine_hash.is_some()
-                                        && player.entitlement_id.is_some()
+                                    if player.machineHash.is_some()
+                                        && player.entitlementId.is_some()
                                     {
                                         let result = heartbeat_service
                                             .send_ticket(
-                                                player.machine_hash.as_ref().unwrap(),
-                                                player.entitlement_id.as_ref().unwrap(),
+                                                player.machineHash.as_ref().unwrap(),
+                                                player.entitlementId.as_ref().unwrap(),
                                                 &sv_license_key_token,
                                             )
                                             .await;
@@ -171,13 +171,13 @@ impl ThreadService {
                                 let heartbeat_service = heartbeat_service.clone();
 
                                 async move {
-                                    if player.machine_hash.is_some()
-                                        && player.entitlement_id.is_some()
+                                    if player.machineHash.is_some()
+                                        && player.entitlementId.is_some()
                                     {
                                         let result = heartbeat_service
                                             .send_entitlement(
-                                                player.machine_hash.as_ref().unwrap(),
-                                                player.entitlement_id.as_ref().unwrap(),
+                                                player.machineHash.as_ref().unwrap(),
+                                                player.entitlementId.as_ref().unwrap(),
                                             )
                                             .await;
 
