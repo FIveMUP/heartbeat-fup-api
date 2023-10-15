@@ -13,10 +13,10 @@ pub enum ServerError {
 
 impl IntoResponse for ServerError {
     fn into_response(self) -> Response {
-        match self {
-            ServerError::NotFound => {
-                ApiErrorResponse::send(StatusCode::NOT_FOUND, Some("server Not Found".to_string()))
-            }
-        }
+        let status_code = match self {
+            ServerError::NotFound => StatusCode::NOT_FOUND,
+        };
+
+        ApiErrorResponse::send(status_code, Some(self.to_string()))
     }
 }

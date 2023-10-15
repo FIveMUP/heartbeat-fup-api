@@ -22,10 +22,10 @@ pub(crate) async fn heartbeat(
                 &server_data.sv_licenseKeyToken.unwrap(),
                 &server_data.name.unwrap(),
             )
-            .await;
+            .await?;
     }
 
-    state.threads_service.heartbeat(&cfx_license).await;
+    state.threads_service.heartbeat(&cfx_license).await?;
 
     Ok(StatusCode::OK.into_response())
 }
