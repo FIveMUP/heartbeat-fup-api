@@ -101,32 +101,32 @@ impl ThreadService {
 
             loop {
                 let now = tokio::time::Instant::now();
-                let mut new_ids = AHashSet::new();
                 let new_assigned_players = Arc::new(Mutex::new(AHashSet::new()));
-                let last_heartbeat;
 
                 {
                     let heartbeats = heartbeat.read().await;
-                    last_heartbeat = *heartbeats.get(&*key).unwrap().lock().await;
-                }
+                    let last_heartbeat = *heartbeats.get(&*key).unwrap().lock().await;
 
-                if now.duration_since(last_heartbeat) > HEARTBEAT_TIMEOUT {
-                    info!("Thread {} timed out", server_name);
-                    threads.write().await.remove(&*key);
-                    break;
+                    if now.duration_since(last_heartbeat) > HEARTBEAT_TIMEOUT {
+                        info!("Thread {} timed out", server_name);
+                        threads.write().await.remove(&*key);
+                        break;
+                    }
                 }
 
                 let new_players = Arc::new(stock_repo.find_all_by_server(&server_id).await);
 
                 {
+                    let mut refresh_assigned_ids = AHashSet::new();
                     let mut new_assigned_players = new_assigned_players.lock().await;
+                    
                     for player in &*new_players {
                         if let Some(id) = &player.id {
                             if !assigned_ids.contains(id) {
                                 new_assigned_players.insert(player.to_owned());
                             }
 
-                            new_ids.insert(id.to_owned());
+                            refresh_assigned_ids.insert(id.to_owned());
                         }
                     }
 
@@ -137,9 +137,9 @@ impl ThreadService {
                             new_assigned_players.len()
                         );
                     }
-                }
 
-                assigned_ids = new_ids;
+                    assigned_ids = refresh_assigned_ids;
+                }
 
                 let assigned_players_task = tokio::task::spawn({
                     let key = key.clone();
