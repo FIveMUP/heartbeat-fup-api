@@ -36,12 +36,12 @@ impl HeartbeatService {
         Self {
             req_client_with_proxy: Client::builder()
                 .proxy(Proxy::all(PROXY_URL).unwrap())
-                .timeout(Duration::from_secs(8))
+                .timeout(Duration::from_secs(15))
                 .build()
                 .unwrap(),
 
             req_client_without_proxy: Client::builder()
-                .timeout(Duration::from_secs(8))
+                .timeout(Duration::from_secs(15))
                 .build()
                 .unwrap(),
         }
@@ -65,10 +65,14 @@ impl HeartbeatService {
             .headers(HeaderMap::from_ref(&HEADERS))
             .body(entitlement_heartbeat)
             .send()
-            .await
-            .unwrap();
+            .await;
+        
+        if response.is_err() {
+            error!("Failed to send entitlement heartbeat. Error: {}", response.err().unwrap());
+            return Ok(false);
+        }
 
-        let response_status = response.status();
+        let response_status = response.unwrap().status();
         if response_status.is_success() {
             Ok(true)
         } else {
@@ -102,8 +106,14 @@ impl HeartbeatService {
             .headers(HeaderMap::from_ref(&HEADERS))
             .body(ticket_heartbeat)
             .send()
-            .await
-            .unwrap();
+            .await;
+
+        if response.is_err() {
+            error!("Failed to send ticket heartbeat. Error: {}", response.err().unwrap());
+            return Ok(false);
+        }
+
+        let response = response.unwrap();
 
         if response.status().is_success() {
             let response_json = response.json::<serde_json::Value>().await.unwrap();
