@@ -7,7 +7,6 @@ use std::sync::Arc;
 
 pub type GlobalState = Arc<GlobalStateInner>;
 
-#[derive(Clone)]
 pub struct GlobalStateInner {
     pub stock_account_repository: StockAccountRepository,
     pub server_repository: ServerRepository,

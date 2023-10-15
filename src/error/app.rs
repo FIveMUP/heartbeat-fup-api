@@ -1,4 +1,4 @@
-use super::{ServerError, ThreadError};
+use super::{CfxApiError, ServerError, ThreadError};
 use axum::response::{IntoResponse, Response};
 use thiserror::Error;
 
@@ -10,6 +10,8 @@ pub enum AppError {
     Server(#[from] ServerError),
     #[error(transparent)]
     Thread(#[from] ThreadError),
+    #[error(transparent)]
+    CfxApi(#[from] CfxApiError),
 }
 
 impl IntoResponse for AppError {
@@ -17,6 +19,7 @@ impl IntoResponse for AppError {
         match self {
             AppError::Server(e) => e.into_response(),
             AppError::Thread(e) => e.into_response(),
+            AppError::CfxApi(e) => e.into_response(),
         }
     }
 }
