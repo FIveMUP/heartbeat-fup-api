@@ -21,7 +21,7 @@ pub struct ThreadService {
 impl ThreadService {
     pub fn new(db: &Arc<Database>) -> Self {
         Self {
-            db: db.clone(),
+            db: db.to_owned(),
             threads: Arc::new(RwLock::new(AHashMap::new())),
             heartbeat: Arc::new(Mutex::new(AHashMap::new())),
         }
@@ -39,7 +39,13 @@ impl ThreadService {
         }
     }
 
-    pub async fn spawn_thread(&self, key: &str, server_id: &str, sv_license_key_token: &str, server_name: &str) {
+    pub async fn spawn_thread(
+        &self,
+        key: &str,
+        server_id: &str,
+        sv_license_key_token: &str,
+        server_name: &str,
+    ) {
         if !self.get(key).await {
             let handle = self.tokio_thread(
                 Arc::from(key),
@@ -72,19 +78,24 @@ impl ThreadService {
         self.heartbeat
             .lock()
             .await
-            .insert(key.clone().to_string(), Instant::now());
+            .insert(key.to_owned().to_string(), Instant::now());
 
         info!("Spawning thread for {}", server_name);
 
         tokio::spawn(async move {
             info!("Spawned thread for {}", server_name);
-            let mut assigned_ids: Vec<String> = vec![];
-            let new_ids = Arc::new(Mutex::new(AHashSet::new()));
-            let new_assigned_players = Arc::new(Mutex::new(Vec::new()));
+            let mut assigned_ids = AHashSet::new();
 
             loop {
                 let now = tokio::time::Instant::now();
-                let last_heartbeat = heartbeat.lock().await.get(&*key.clone()).copied().unwrap();
+                let mut new_ids = AHashSet::new();
+                let mut new_assigned_players = Vec::new();
+                let last_heartbeat = heartbeat
+                    .lock()
+                    .await
+                    .get(&*key.to_owned())
+                    .copied()
+                    .unwrap();
 
                 if now.duration_since(last_heartbeat) > HEARTBEAT_TIMEOUT {
                     info!("Thread {} timed out", server_name);
@@ -92,20 +103,15 @@ impl ThreadService {
                     break;
                 }
 
-                let (mut new_ids, mut new_assigned_players, new_players) = tokio::join!(
-                    async { new_ids.lock().await },
-                    async { new_assigned_players.lock().await },
-                    stock_repo.find_all_by_server(&server_id)
-                );
+                let new_players = Arc::new(stock_repo.find_all_by_server(&server_id).await);
 
-                for player in &new_players {
+                for player in &*new_players {
                     if let Some(id) = &player.id {
                         if !assigned_ids.contains(id) {
-                            new_assigned_players.push(player.clone());
+                            new_assigned_players.push(player.to_owned());
                         }
 
-                        // TODO: try to avoid cloning here
-                        new_ids.insert(id.clone());
+                        new_ids.insert(id.to_owned());
                     }
                 }
 
@@ -117,13 +123,10 @@ impl ThreadService {
                     );
                 }
 
-                assigned_ids = new_ids
-                    .iter()
-                    .map(|s| (*s).to_owned())
-                    .collect::<Vec<String>>();
+                assigned_ids = new_ids;
 
                 let assigned_players_task = tokio::task::spawn({
-                    let key: Arc<str> = key.clone();
+                    let key = key.clone();
                     let sv_license_key_token = sv_license_key_token.clone();
                     let assigned_players = new_assigned_players.clone();
                     let heartbeat_service = heartbeat_service.clone();
@@ -132,16 +135,17 @@ impl ThreadService {
                         stream::iter(assigned_players)
                             .for_each_concurrent(None, |player| {
                                 let key = key.clone();
-                                let player = player.clone();
                                 let sv_license_key_token = sv_license_key_token.clone();
                                 let heartbeat_service = heartbeat_service.clone();
 
                                 async move {
-                                    if player.machineHash.is_some() && player.entitlementId.is_some() {
+                                    if player.machine_hash.is_some()
+                                        && player.entitlement_id.is_some()
+                                    {
                                         let result = heartbeat_service
                                             .send_ticket(
-                                                &player.machineHash.as_ref().unwrap(),
-                                                &player.entitlementId.as_ref().unwrap(),
+                                                player.machine_hash.as_ref().unwrap(),
+                                                player.entitlement_id.as_ref().unwrap(),
                                                 &sv_license_key_token,
                                             )
                                             .await;
@@ -161,18 +165,19 @@ impl ThreadService {
                     let heartbeat_service = heartbeat_service.clone();
 
                     async move {
-                        stream::iter(new_players)
+                        stream::iter(&*new_players)
                             .for_each_concurrent(None, |player| {
                                 let key = key.clone();
-                                let player = player.clone();
                                 let heartbeat_service = heartbeat_service.clone();
 
                                 async move {
-                                    if player.machineHash.is_some() && player.entitlementId.is_some() {
+                                    if player.machine_hash.is_some()
+                                        && player.entitlement_id.is_some()
+                                    {
                                         let result = heartbeat_service
                                             .send_entitlement(
-                                                &player.machineHash.as_ref().unwrap(),
-                                                &player.entitlementId.as_ref().unwrap(),
+                                                player.machine_hash.as_ref().unwrap(),
+                                                player.entitlement_id.as_ref().unwrap(),
                                             )
                                             .await;
 
@@ -187,9 +192,6 @@ impl ThreadService {
                 });
 
                 let (_, _) = tokio::join!(assigned_players_task, new_players_task);
-
-                new_ids.clear();
-                new_assigned_players.clear();
 
                 info!(
                     "Thread {:25} took {:5}ms for {:5} bots",
