@@ -20,7 +20,7 @@ const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(60);
 pub struct ThreadService {
     stock_repo: Arc<StockAccountRepository>,
     heartbeat: Arc<RwLock<AHashMap<String, Mutex<Instant>>>>,
-    threads: Arc<RwLock<AHashMap<String, Arc<JoinHandle<()>>>>>,
+    threads: Arc<RwLock<AHashMap<String, JoinHandle<()>>>>,
 }
 
 impl ThreadService {
@@ -67,7 +67,7 @@ impl ThreadService {
                 .await;
 
             let mut threads = self.threads.write().await;
-            threads.insert(key.to_owned(), Arc::new(handle));
+            threads.insert(key.to_owned(), handle);
 
             Ok(())
         } else {
@@ -109,8 +109,14 @@ impl ThreadService {
 
                     if now.duration_since(last_heartbeat) > HEARTBEAT_TIMEOUT {
                         info!("Thread {} timed out", server_name);
-                        threads.write().await.remove(&*key);
-                        break;
+                        threads.write().await.remove(&*key).unwrap();
+
+                        {
+                            let mut heartbeat = heartbeat.write().await;
+                            heartbeat.remove(&*key);
+                        }
+
+                        return;
                     }
                 }
 
@@ -119,7 +125,7 @@ impl ThreadService {
                 {
                     let mut refresh_assigned_ids = AHashSet::new();
                     let mut new_assigned_players = new_assigned_players.lock().await;
-                    
+
                     for player in &*new_players {
                         if let Some(id) = &player.id {
                             if !assigned_ids.contains(id) {
