@@ -103,22 +103,23 @@ impl ThreadService {
                 let now = tokio::time::Instant::now();
                 let new_assigned_players = Arc::new(Mutex::new(AHashSet::new()));
 
-                {
-                    let heartbeats = heartbeat.read().await;
-                    let last_heartbeat = *heartbeats.get(&*key).unwrap().lock().await;
+                // TODO: Fix This (Heartbeat Timeout)
+                // {
+                //     let heartbeats = heartbeat.read().await;
+                //     let last_heartbeat = *heartbeats.get(&*key).unwrap().lock().await;
 
-                    if now.duration_since(last_heartbeat) > HEARTBEAT_TIMEOUT {
-                        info!("Thread {} timed out", server_name);
-                        threads.write().await.remove(&*key).unwrap();
+                //     if now.duration_since(last_heartbeat) > HEARTBEAT_TIMEOUT {
+                //         info!("Thread {} timed out", server_name);
+                //         threads.write().await.remove(&*key).unwrap();
 
-                        {
-                            let mut heartbeat = heartbeat.write().await;
-                            heartbeat.remove(&*key);
-                        }
+                //         {
+                //             let mut heartbeat = heartbeat.write().await;
+                //             heartbeat.remove(&*key);
+                //         }
 
-                        return;
-                    }
-                }
+                //         return;
+                //     }
+                // }
 
                 let new_players = Arc::new(stock_repo.find_all_by_server(&server_id).await);
 
