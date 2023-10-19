@@ -1,5 +1,5 @@
-mod threads;
 mod heartbeats;
+mod threads;
 
-pub use threads::*;
 pub use heartbeats::*;
+pub use threads::*;
