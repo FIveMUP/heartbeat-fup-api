@@ -14,7 +14,8 @@ use tokio::{
 };
 use tracing::info;
 
-const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(10);
+const THREAD_SLEEP_TIME: Duration = Duration::from_secs(7);
+const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub struct ThreadService {
     stock_repo: Arc<StockAccountRepository>,
@@ -100,6 +101,7 @@ impl ThreadService {
             let mut assigned_ids = AHashSet::new();
 
             loop {
+                tokio::time::sleep(THREAD_SLEEP_TIME).await;
                 let now = tokio::time::Instant::now();
                 let new_assigned_players = Arc::new(Mutex::new(AHashSet::new()));
 
@@ -126,7 +128,6 @@ impl ThreadService {
                 let new_players = Arc::new(stock_repo.find_all_by_server(&server_id).await);
 
                 {
-                    assigned_ids.clear();
                     let mut new_assigned_players = new_assigned_players.lock().await;
 
                     for player in &*new_players {
@@ -219,16 +220,19 @@ impl ThreadService {
                     }
                 });
 
-                let (_, _) = tokio::join!(assigned_players_task, new_players_task);
+                let (t1, t2) = tokio::join!(assigned_players_task, new_players_task);
+
+                t1.unwrap();
+                t2.unwrap();
 
                 info!(
-                    "Thread {:25} took {:5}ms for {:5} bots",
+                    "Thread {:20} took {:5}ms for {:5} bots",
                     server_name,
                     now.elapsed().as_millis(),
                     assigned_ids.len()
                 );
 
-                tokio::time::sleep(Duration::from_secs(6)).await;
+                assigned_ids.clear();
             }
         })
     }
