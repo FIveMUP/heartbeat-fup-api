@@ -1,7 +1,6 @@
 use crate::{config::Database, entities::Server};
 use std::sync::Arc;
 
-#[derive(Clone)]
 pub struct ServerRepository {
     db: Arc<Database>,
 }

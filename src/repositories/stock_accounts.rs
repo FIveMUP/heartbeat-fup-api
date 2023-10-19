@@ -1,7 +1,6 @@
 use crate::{config::Database, entities::StockAccount};
 use std::sync::Arc;
 
-#[derive(Clone)]
 pub struct StockAccountRepository {
     db: Arc<Database>,
 }

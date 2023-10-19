@@ -14,13 +14,12 @@ use tokio::{
 };
 use tracing::info;
 
-const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(60);
+const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(10);
 
-#[derive(Clone)]
 pub struct ThreadService {
     stock_repo: Arc<StockAccountRepository>,
     heartbeat: Arc<RwLock<AHashMap<String, Mutex<Instant>>>>,
-    threads: Arc<RwLock<AHashMap<String, JoinHandle<()>>>>,
+    threads: Arc<RwLock<AHashMap<String, Arc<JoinHandle<()>>>>>,
 }
 
 impl ThreadService {
@@ -66,8 +65,9 @@ impl ThreadService {
                 )
                 .await;
 
+            info!("Thread {:#?}", handle);
             let mut threads = self.threads.write().await;
-            threads.insert(key.to_owned(), handle);
+            threads.insert(key.to_owned(), Arc::new(handle));
 
             Ok(())
         } else {
@@ -103,37 +103,39 @@ impl ThreadService {
                 let now = tokio::time::Instant::now();
                 let new_assigned_players = Arc::new(Mutex::new(AHashSet::new()));
 
-                // TODO: Fix This (Heartbeat Timeout)
-                // {
-                //     let heartbeats = heartbeat.read().await;
-                //     let last_heartbeat = *heartbeats.get(&*key).unwrap().lock().await;
+                {
+                    let heartbeats = heartbeat.read().await;
+                    let last_heartbeat = heartbeats.get(&*key).unwrap().lock().await;
 
-                //     if now.duration_since(last_heartbeat) > HEARTBEAT_TIMEOUT {
-                //         info!("Thread {} timed out", server_name);
-                //         threads.write().await.remove(&*key).unwrap();
+                    if now.duration_since(*last_heartbeat).gt(&HEARTBEAT_TIMEOUT) {
+                        drop(last_heartbeat);
+                        drop(heartbeats);
 
-                //         {
-                //             let mut heartbeat = heartbeat.write().await;
-                //             heartbeat.remove(&*key);
-                //         }
+                        info!("Thread {} timed out", server_name);
+                        threads.write().await.remove(&*key).unwrap();
 
-                //         return;
-                //     }
-                // }
+                        {
+                            let mut heartbeat = heartbeat.write().await;
+                            heartbeat.remove(&*key);
+                        }
+
+                        break;
+                    }
+                }
 
                 let new_players = Arc::new(stock_repo.find_all_by_server(&server_id).await);
 
                 {
-                    let mut refresh_assigned_ids = AHashSet::new();
+                    assigned_ids.clear();
                     let mut new_assigned_players = new_assigned_players.lock().await;
 
                     for player in &*new_players {
                         if let Some(id) = &player.id {
                             if !assigned_ids.contains(id) {
-                                new_assigned_players.insert(player.to_owned());
+                                new_assigned_players.insert(player.clone());
                             }
 
-                            refresh_assigned_ids.insert(id.to_owned());
+                            assigned_ids.insert(id.to_owned());
                         }
                     }
 
@@ -144,8 +146,6 @@ impl ThreadService {
                             new_assigned_players.len()
                         );
                     }
-
-                    assigned_ids = refresh_assigned_ids;
                 }
 
                 let assigned_players_task = tokio::task::spawn({
@@ -172,6 +172,7 @@ impl ThreadService {
                                                 sv_license_key_token,
                                             )
                                             .await;
+
                                         if let Err(error) = result {
                                             info!("Thread {} ticket error: {:?}", key, error);
                                         }

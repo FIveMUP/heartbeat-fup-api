@@ -7,7 +7,6 @@ use reqwest::{
     Client, Proxy,
 };
 use std::time::Duration;
-use tracing::error;
 
 const FIVEM_URL: &str = "https://lambda.fivem.net/api";
 const PROXY_URL: &str = "http://customer-fivemup:FiveMUP2k23HappySex@dc.pr.oxylabs.io:10000";
@@ -25,7 +24,6 @@ static HEADERS: Lazy<HeaderMap> = Lazy::new(|| {
     )
 });
 
-#[derive(Clone)]
 pub struct HeartbeatService {
     req_client_with_proxy: Client,
     req_client_without_proxy: Client,
@@ -51,15 +49,14 @@ impl HeartbeatService {
         &self,
         machine_hash: &str,
         entitlement_id: &str,
-    ) -> AppResult<bool> {
+    ) -> AppResult<()> {
         let response;
 
         {
-            let machine_hash_encoded = urlencoding::encode(machine_hash);
             let entitlement_heartbeat = format!(
                 "entitlementId={}&f=%7b%7d&gameName=gta5&h2=YyMyxwNpROOEdyxjBu%2bNls1LHzPzx1zTEX7RtDmwD5Eb2MPVgeWNFbNZC3YfGgUnbriTU2jsl7jO0SQ9%2bmDqmU1rLf075r4bxMuKLjcUu2IPy3zVXd2ni2xVJJw8%2bFOoWqaTKIQGggBYEBEBRNOsFNjp6TLqbCwKiqMmc7rl8pLj6SCUm1MpNcBg%2fIE15VmMk4erFf26PdrA4GpAKAP%2fdsM9QaY1GbBnwM4V4xWl8EtLWFPF0XW9xePpm5ZPOjU3OfMAZ2eTF6cNkNsxAGHIMB4VTaKLGWoWmRToEEzbh9wTebY97mYeFdtqF8L%2bnNPVv6y0k4szAwdbInJ2oE73iFj5mZIKLGxqKtNGg9r10nJm2Bk1bTchSWTKlsI%2ffN1vvG6g1fxNDf5%2bJyqGnhktaEMt7L8JTxpgHPuAKtAN795kAM%2fZRgHUUqJzxnH4Ps3jSaMAt5eDpzfdkGvhADFIMMfSEEZ6WqQyvwRw85arnc6IgNYKFlqzGnpsHcWE13elDaRPbgNfMwT7U4Jk31vcfSsadYeqN6Ngad6CeF9zty7GWMklfWcRuaRqtiJvPI3%2fhGymZwPdFHsWvsBEFcbKTWVukjVzaXbuuOH81iY%2fCw7Mbq9A%2f%2fERGFNFW5HXUd9WCZsUooXHJcjVuczxO0BgQLfyEGaaemQSr0RwA3abTe7l5nY4wMC%2fJKkB1AKURTTsJcHhbK0Xrz14b5XOZIZDNlUGQpXweFTMWeualdOAxGUvDnnD0%2fqIZ39zjnPdulZUxCzGt%2fPt1Mt2nsAEJaYq%2fSLBqoahs9UtgGs%2fX9PAqqsnJdsRJ%2bZXKA%2fGfeBr58TCQsDJ8B1CCkqqsmAjItskmOY6w2%2fNGhQw7enImzXwvO4%3d&machineHash=AQAL&machineHashIndex={}&rosId=1234",
                 entitlement_id,
-                machine_hash_encoded
+                urlencoding::encode(machine_hash)
             );
 
             response = self
@@ -69,21 +66,17 @@ impl HeartbeatService {
                 .body(entitlement_heartbeat)
                 .send()
                 .await
+                .map_err(|e| {
+                    tracing::error!("Error sending entitlement heartbeat: {}", e);
+                    CfxApiError::EntitlementHeartbeatFailed
+                })?
+                .status()
         }
 
-        match response {
-            Ok(response) => {
-                if response.status().is_success() {
-                    Ok(true)
-                } else {
-                    Err(CfxApiError::StatusCodeNot200)?
-                }
-            }
-
-            Err(err) => {
-                error!("Failed to send entitlement heartbeat. Error: {}", err);
-                Err(CfxApiError::EntitlementHeartbeatFailed)?
-            }
+        if response.is_success() {
+            Ok(())
+        } else {
+            Err(CfxApiError::StatusCodeNot200)?
         }
     }
 
@@ -92,9 +85,9 @@ impl HeartbeatService {
         machine_hash: &str,
         entitlement_id: &str,
         sv_license_key_token: &str,
-    ) -> AppResult<bool> {
-        self.send_entitlement(machine_hash, entitlement_id).await?;
+    ) -> AppResult<()> {
         let response;
+        self.send_entitlement(machine_hash, entitlement_id).await?;
 
         {
             let ticket_heartbeat = format!(
@@ -110,28 +103,22 @@ impl HeartbeatService {
                 .headers(HeaderMap::from_ref(&HEADERS))
                 .body(ticket_heartbeat)
                 .send()
-                .await;
+                .await
+                .map_err(|_| CfxApiError::TicketHeartbeatFailed)
+                .unwrap();
         }
 
-        match response {
-            Ok(response) => {
-                if response.status().is_success() {
-                    let response_json = response.json::<serde_json::Value>().await.unwrap();
+        if response.status().is_success() {
+            // TODO: Check if there is a better way to do this
+            let response_json = response.json::<serde_json::Value>().await.unwrap();
 
-                    if response_json["ticket"].is_null() {
-                        Err(CfxApiError::TicketResponseNull)?;
-                    }
-
-                    Ok(true)
-                } else {
-                    Err(CfxApiError::StatusCodeNot200)?
-                }
+            if response_json["ticket"].is_null() {
+                Err(CfxApiError::TicketResponseNull)?;
             }
 
-            Err(e) => {
-                error!("Failed to send ticket heartbeat. Error: {}", e);
-                Err(CfxApiError::TicketHeartbeatFailed)?
-            }
+            Ok(())
+        } else {
+            Err(CfxApiError::StatusCodeNot200)?
         }
     }
 }
