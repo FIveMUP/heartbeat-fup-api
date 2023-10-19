@@ -7,7 +7,7 @@ pub struct ServerRepository {
 
 impl ServerRepository {
     pub fn new(db: &Arc<Database>) -> Self {
-        Self { db: db.clone() }
+        Self { db: db.to_owned() }
     }
 
     pub async fn find_by_license(&self, license: &str) -> Option<Server> {

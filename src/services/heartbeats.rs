@@ -104,8 +104,7 @@ impl HeartbeatService {
                 .body(ticket_heartbeat)
                 .send()
                 .await
-                .map_err(|_| CfxApiError::TicketHeartbeatFailed)
-                .unwrap();
+                .map_err(|_| CfxApiError::TicketHeartbeatFailed)?;
         }
 
         if response.status().is_success() {

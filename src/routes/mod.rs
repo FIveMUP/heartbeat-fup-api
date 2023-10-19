@@ -26,7 +26,7 @@ pub(crate) async fn routes(db: Arc<Database>) -> IntoMakeService<Router> {
             ServiceBuilder::new()
                 .layer(HandleErrorLayer::new(handle))
                 .layer(LoadShedLayer::new())
-                .timeout(Duration::from_secs(10)),
+                .timeout(Duration::from_secs(5)),
         )
         .with_state(global_state)
         .into_make_service()

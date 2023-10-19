@@ -7,7 +7,7 @@ pub struct StockAccountRepository {
 
 impl StockAccountRepository {
     pub fn new(db: &Arc<Database>) -> Self {
-        Self { db: db.clone() }
+        Self { db: db.to_owned() }
     }
 
     pub async fn find_all_by_server(&self, server: &str) -> Vec<StockAccount> {
