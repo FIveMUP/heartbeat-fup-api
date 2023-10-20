@@ -14,7 +14,7 @@ tower = { version = "0.4.13", features = [
     "timeout",
     "load-shed",
 ] }
-thiserror = "1.0.49"
+thiserror = "1.0.50"
 serde = { version = "1.0.189", features = ["derive"] }
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
