@@ -9,6 +9,7 @@ use reqwest::{
 use std::time::Duration;
 
 const FIVEM_URL: &str = "https://lambda.fivem.net/api";
+const EID_URL: &str = "https://cnl-hb-live.fivem.net/api";
 const PROXY_URL: &str = "http://customer-fivemup:FiveMUP2k23HappySex@dc.pr.oxylabs.io:10000";
 static HEADERS: Lazy<HeaderMap> = Lazy::new(|| {
     HeaderMap::from_iter(
@@ -17,7 +18,7 @@ static HEADERS: Lazy<HeaderMap> = Lazy::new(|| {
             (
                 USER_AGENT,
                 HeaderValue::from_static(
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.3"
+                    "CitizenFX/1 (with adhesive; rel. 6798)"
                 ),
             )
         ]
@@ -60,8 +61,8 @@ impl HeartbeatService {
             );
 
             response = self
-                .req_client_without_proxy
-                .post(format!("{FIVEM_URL}/validate/entitlement"))
+                .req_client_with_proxy
+                .post(format!("{EID_URL}/validate/entitlement"))
                 .headers(HeaderMap::from_ref(&HEADERS))
                 .body(entitlement_heartbeat)
                 .send()
