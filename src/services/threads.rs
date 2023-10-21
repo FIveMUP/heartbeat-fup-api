@@ -12,10 +12,11 @@ use tokio::{
     task::JoinHandle,
     time::Instant,
 };
-use tracing::info;
+use tracing::{info, error};
 
 const THREAD_SLEEP_TIME: Duration = Duration::from_secs(6);
 const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(30);
+// const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub struct ThreadService {
     stock_repo: Arc<StockAccountRepository>,
@@ -148,19 +149,20 @@ impl ThreadService {
                         if let Some(id) = &player.id {
                             if !assigned_ids.contains(id) {
                                 new_assigned_players.insert(player.clone());
+                                assigned_ids.insert(id.to_owned());
                             }
-
-                            assigned_ids.insert(id.to_owned());
                         }
                     }
 
-                    // if !new_assigned_players.is_empty() {
-                    //     info!(
-                    //         "New players assigned to {}: {:?}",
-                    //         server_name,
-                    //         new_assigned_players.len()
-                    //     );
-                    // }
+                    assigned_ids.retain(|id| {
+                        new_players.iter().any(|player| {
+                            if let Some(player_id) = &player.id {
+                                player_id == id
+                            } else {
+                                false
+                            }
+                        })
+                    });
                 }
 
                 let assigned_players_task = tokio::task::spawn({
@@ -189,7 +191,7 @@ impl ThreadService {
                                             .await;
 
                                         if let Err(error) = result {
-                                            info!("Thread {} ticket error: {:?}", key, error);
+                                            info!("Player {} ticket error: {:?}", player.id.as_ref().unwrap(), error);
                                         }
                                     }
                                 }
@@ -198,23 +200,20 @@ impl ThreadService {
                     }
                 });
                 
-                let key_clone = key.clone();
-                let heartbeat_service_clone = heartbeat_service.clone();
+                let key = key.clone();
+                let heartbeat_service_cloned = heartbeat_service.clone();
                 let new_players_task = tokio::task::spawn(async move {
                     if new_players.is_empty() {
-                        println!("No new players");
                         return;
                     }
                 
-                    let key = key_clone;
                     let new_players_cloned = new_players.clone();
-                    let heartbeat_service_cloned = heartbeat_service_clone;
                 
                     stream::iter(&*new_players_cloned)
                         .for_each_concurrent(None, |player| {
                             let key = &key;
                             let heartbeat_service = &heartbeat_service_cloned;
-                
+                            
                             async move {
                                 if player.machineHash.is_some()
                                     && player.entitlementId.is_some()
@@ -227,7 +226,7 @@ impl ThreadService {
                                         .await;
                 
                                     if let Err(error) = result {
-                                        info!("Thread {} heartbeat error: {:?}", key, error);
+                                        info!("Player {} heartbeat error: {:?}", player.id.as_ref().unwrap(), error);
                                     }
                                 }
                             }
@@ -237,10 +236,10 @@ impl ThreadService {
                 
                 let (t1, t2) = tokio::join!(assigned_players_task, new_players_task);
                 if let Err(panic_info) = &t1 {
-                    eprintln!("assigned_players_task panicked: {:?}", panic_info);
+                    error!("assigned_players_task panicked: {:?}", panic_info);
                 }
                 if let Err(panic_info) = &t2 {
-                    eprintln!("new_players_task panicked: {:?}", panic_info);
+                    error!("new_players_task panicked: {:?}", panic_info);
                 }
                 t1.unwrap_or_default();
                 t2.unwrap_or_default();
@@ -251,8 +250,6 @@ impl ThreadService {
                     now.elapsed().as_millis(),
                     assigned_ids.len()
                 );
-
-                assigned_ids.clear();
             }
         })
     }
