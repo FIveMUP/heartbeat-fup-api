@@ -14,7 +14,7 @@ use tokio::{
 };
 use tracing::info;
 
-const THREAD_SLEEP_TIME: Duration = Duration::from_secs(7);
+const THREAD_SLEEP_TIME: Duration = Duration::from_secs(6);
 const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub struct ThreadService {
@@ -125,7 +125,21 @@ impl ThreadService {
                     }
                 }
 
-                let new_players = Arc::new(stock_repo.find_all_by_server(&server_id).await);
+                let mut players = stock_repo.find_all_by_server(&server_id).await;
+
+                {
+                    players.retain(|player| {
+                        if let Some(expire_on) = &player.expireOn {
+                            if expire_on.lt(&chrono::Utc::now()) {
+                                info!("Bot {} expired at {}", player.id.as_ref().unwrap(), expire_on);
+                                return false;
+                            }
+                        }
+                        true
+                    });
+                }
+
+                let new_players = Arc::new(players);
 
                 {
                     let mut new_assigned_players = new_assigned_players.lock().await;
@@ -140,13 +154,13 @@ impl ThreadService {
                         }
                     }
 
-                    if !new_assigned_players.is_empty() {
-                        info!(
-                            "New players assigned to {}: {:?}",
-                            server_name,
-                            new_assigned_players.len()
-                        );
-                    }
+                    // if !new_assigned_players.is_empty() {
+                    //     info!(
+                    //         "New players assigned to {}: {:?}",
+                    //         server_name,
+                    //         new_assigned_players.len()
+                    //     );
+                    // }
                 }
 
                 let assigned_players_task = tokio::task::spawn({
@@ -183,47 +197,53 @@ impl ThreadService {
                             .await
                     }
                 });
-
-                let new_players_task = tokio::task::spawn({
-                    if (*new_players).is_empty() {
+                
+                let key_clone = key.clone();
+                let heartbeat_service_clone = heartbeat_service.clone();
+                let new_players_task = tokio::task::spawn(async move {
+                    if new_players.is_empty() {
+                        println!("No new players");
                         return;
                     }
-
-                    let key = key.clone();
-                    let new_players = new_players.clone();
-                    let heartbeat_service = heartbeat_service.clone();
-
-                    async move {
-                        stream::iter(&*new_players)
-                            .for_each_concurrent(None, |player| {
-                                let key = &key;
-                                let heartbeat_service = &heartbeat_service;
-
-                                async move {
-                                    if player.machineHash.is_some()
-                                        && player.entitlementId.is_some()
-                                    {
-                                        let result = heartbeat_service
-                                            .send_entitlement(
-                                                player.machineHash.as_ref().unwrap(),
-                                                player.entitlementId.as_ref().unwrap(),
-                                            )
-                                            .await;
-
-                                        if let Err(error) = result {
-                                            info!("Thread {} heartbeat error: {:?}", key, error);
-                                        }
+                
+                    let key = key_clone;
+                    let new_players_cloned = new_players.clone();
+                    let heartbeat_service_cloned = heartbeat_service_clone;
+                
+                    stream::iter(&*new_players_cloned)
+                        .for_each_concurrent(None, |player| {
+                            let key = &key;
+                            let heartbeat_service = &heartbeat_service_cloned;
+                
+                            async move {
+                                if player.machineHash.is_some()
+                                    && player.entitlementId.is_some()
+                                {
+                                    let result = heartbeat_service
+                                        .send_entitlement(
+                                            player.machineHash.as_ref().unwrap(),
+                                            player.entitlementId.as_ref().unwrap(),
+                                        )
+                                        .await;
+                
+                                    if let Err(error) = result {
+                                        info!("Thread {} heartbeat error: {:?}", key, error);
                                     }
                                 }
-                            })
-                            .await
-                    }
+                            }
+                        })
+                        .await;
                 });
-
+                
                 let (t1, t2) = tokio::join!(assigned_players_task, new_players_task);
-
-                t1.unwrap();
-                t2.unwrap();
+                if let Err(panic_info) = &t1 {
+                    eprintln!("assigned_players_task panicked: {:?}", panic_info);
+                }
+                if let Err(panic_info) = &t2 {
+                    eprintln!("new_players_task panicked: {:?}", panic_info);
+                }
+                t1.unwrap_or_default();
+                t2.unwrap_or_default();
 
                 info!(
                     "Thread {:20} took {:5}ms for {:5} bots",
