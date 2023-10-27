@@ -10,7 +10,7 @@ use std::time::Duration;
 
 const FIVEM_URL: &str = "https://lambda.fivem.net/api";
 const EID_URL: &str = "https://cnl-hb-live.fivem.net/api";
-const PROXY_URL: &str = "http://customer-fivemup:FiveMUP2k23HappySex@dc.pr.oxylabs.io:10000";
+const PROXY_URL: &str = "http://sp7j5w5bze:proxypassxd1234fivemup@eu.dc.smartproxy.com:20000";
 static HEADERS: Lazy<HeaderMap> = Lazy::new(|| {
     HeaderMap::from_iter(
         vec![
