@@ -17,7 +17,7 @@ tower = { version = "0.4.13", features = [
 thiserror = "1.0.50"
 serde = { version = "1.0.192", features = ["derive"] }
 tracing = "0.1.40"
-tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 sqlx = { version = "0.7.2", features = ["mysql", "runtime-tokio", "chrono"] }
 hyper = { version = "0.14.27", features = ["full"] }
 mimalloc = "0.1.39"
