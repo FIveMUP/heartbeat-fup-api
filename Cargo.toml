@@ -19,7 +19,7 @@ serde = { version = "1.0.192", features = ["derive"] }
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
 sqlx = { version = "0.7.2", features = ["mysql", "runtime-tokio", "chrono"] }
-hyper = { version = "0.14.27", features = ["full"] }
+hyper = { version = "1.0.1", features = ["full"] }
 mimalloc = "0.1.39"
 chrono = "0.4.31"
 reqwest = { version = "0.11.22", features = ["json"] }
