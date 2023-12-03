@@ -1,32 +1,14 @@
 use crate::error::{AppResult, CfxApiError};
-use axum::{extract::FromRef, http::HeaderValue};
-use hyper::header::USER_AGENT;
-use once_cell::sync::Lazy;
-use reqwest::{
-    header::{HeaderMap, CONTENT_TYPE},
-    Client, Proxy,
-};
+use reqwest::{header::CONTENT_TYPE, Client, Proxy};
 use std::time::Duration;
 
 const FIVEM_URL: &str = "https://lambda.fivem.net/api";
 const EID_URL: &str = "https://cnl-hb-live.fivem.net/api";
 const PROXY_URL: &str = "http://sp7j5w5bze:proxypassxd1234fivemup@eu.dc.smartproxy.com:20000";
-static HEADERS: Lazy<HeaderMap> = Lazy::new(|| {
-    HeaderMap::from_iter(
-        vec![
-            (CONTENT_TYPE, HeaderValue::from_static("application/x-www-form-urlencoded")),
-            (
-                USER_AGENT,
-                HeaderValue::from_static(
-                    "CitizenFX/1 (with adhesive; rel. 6798)"
-                ),
-            )
-        ]
-    )
-});
 
 pub struct HeartbeatService {
     req_client_with_proxy: Client,
+    #[allow(unused)]
     req_client_without_proxy: Client,
 }
 
@@ -35,12 +17,14 @@ impl HeartbeatService {
         Self {
             req_client_with_proxy: Client::builder()
                 .proxy(Proxy::all(PROXY_URL).unwrap())
+                .user_agent("CitizenFX/1 (with adhesive; rel. 6798)")
                 .timeout(Duration::from_secs(15))
                 .build()
                 .unwrap(),
 
             req_client_without_proxy: Client::builder()
                 .timeout(Duration::from_secs(15))
+                .user_agent("CitizenFX/1 (with adhesive; rel. 6798)")
                 .build()
                 .unwrap(),
         }
@@ -51,19 +35,16 @@ impl HeartbeatService {
         machine_hash: &str,
         entitlement_id: &str,
     ) -> AppResult<()> {
-        let response;
-
-        {
+        let response = {
             let entitlement_heartbeat = format!(
                 "entitlementId={}&f=%7b%7d&gameName=gta5&h2=YyMyxwNpROOEdyxjBu%2bNls1LHzPzx1zTEX7RtDmwD5Eb2MPVgeWNFbNZC3YfGgUnbriTU2jsl7jO0SQ9%2bmDqmU1rLf075r4bxMuKLjcUu2IPy3zVXd2ni2xVJJw8%2bFOoWqaTKIQGggBYEBEBRNOsFNjp6TLqbCwKiqMmc7rl8pLj6SCUm1MpNcBg%2fIE15VmMk4erFf26PdrA4GpAKAP%2fdsM9QaY1GbBnwM4V4xWl8EtLWFPF0XW9xePpm5ZPOjU3OfMAZ2eTF6cNkNsxAGHIMB4VTaKLGWoWmRToEEzbh9wTebY97mYeFdtqF8L%2bnNPVv6y0k4szAwdbInJ2oE73iFj5mZIKLGxqKtNGg9r10nJm2Bk1bTchSWTKlsI%2ffN1vvG6g1fxNDf5%2bJyqGnhktaEMt7L8JTxpgHPuAKtAN795kAM%2fZRgHUUqJzxnH4Ps3jSaMAt5eDpzfdkGvhADFIMMfSEEZ6WqQyvwRw85arnc6IgNYKFlqzGnpsHcWE13elDaRPbgNfMwT7U4Jk31vcfSsadYeqN6Ngad6CeF9zty7GWMklfWcRuaRqtiJvPI3%2fhGymZwPdFHsWvsBEFcbKTWVukjVzaXbuuOH81iY%2fCw7Mbq9A%2f%2fERGFNFW5HXUd9WCZsUooXHJcjVuczxO0BgQLfyEGaaemQSr0RwA3abTe7l5nY4wMC%2fJKkB1AKURTTsJcHhbK0Xrz14b5XOZIZDNlUGQpXweFTMWeualdOAxGUvDnnD0%2fqIZ39zjnPdulZUxCzGt%2fPt1Mt2nsAEJaYq%2fSLBqoahs9UtgGs%2fX9PAqqsnJdsRJ%2bZXKA%2fGfeBr58TCQsDJ8B1CCkqqsmAjItskmOY6w2%2fNGhQw7enImzXwvO4%3d&machineHash=AQAL&machineHashIndex={}&rosId=1234",
                 entitlement_id,
                 urlencoding::encode(machine_hash)
             );
 
-            response = self
-                .req_client_with_proxy
+            self.req_client_with_proxy
                 .post(format!("{EID_URL}/validate/entitlement"))
-                .headers(HeaderMap::from_ref(&HEADERS))
+                .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
                 .body(entitlement_heartbeat)
                 .send()
                 .await
@@ -72,7 +53,7 @@ impl HeartbeatService {
                     CfxApiError::EntitlementHeartbeatFailed
                 })?
                 .status()
-        }
+        };
 
         if response.is_success() {
             Ok(())
@@ -87,10 +68,7 @@ impl HeartbeatService {
         entitlement_id: &str,
         sv_license_key_token: &str,
     ) -> AppResult<()> {
-        let response;
-        self.send_entitlement(machine_hash, entitlement_id).await?;
-
-        {
+        let response = {
             let ticket_heartbeat = format!(
                 "gameName=gta5&guid=148618792012444134&machineHash=AQAL&machineHashIndex={}&server=http%3a%2f%51.91.102.108%3a30120%2f&serverKeyToken={}&token={}",
                 urlencoding::encode(machine_hash),
@@ -98,15 +76,16 @@ impl HeartbeatService {
                 entitlement_id
             );
 
-            response = self
-                .req_client_with_proxy
+            self.req_client_with_proxy
                 .post(format!("{FIVEM_URL}/ticket/create"))
-                .headers(HeaderMap::from_ref(&HEADERS))
+                .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
                 .body(ticket_heartbeat)
                 .send()
                 .await
-                .map_err(|_| CfxApiError::TicketHeartbeatFailed)?;
-        }
+                .map_err(|_| CfxApiError::TicketHeartbeatFailed)?
+        };
+
+        self.send_entitlement(machine_hash, entitlement_id).await?;
 
         if response.status().is_success() {
             // TODO: Check if there is a better way to do this
