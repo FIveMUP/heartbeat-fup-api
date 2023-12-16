@@ -103,7 +103,8 @@ impl ThreadService {
             loop {
                 tokio::time::sleep(THREAD_SLEEP_TIME).await;
                 let now = tokio::time::Instant::now();
-                let new_assigned_players = Arc::new(Mutex::new(AHashSet::new()));
+                let new_assigned_players: Arc<Mutex<AHashSet<crate::entities::StockAccount>>> =
+                    Arc::new(Mutex::new(AHashSet::new()));
 
                 {
                     let heartbeats = heartbeat.read().await;
@@ -182,11 +183,13 @@ impl ThreadService {
                                 async move {
                                     if player.machineHash.is_some()
                                         && player.entitlementId.is_some()
+                                        && player.accountIndex.is_some()
                                     {
                                         let result = heartbeat_service
                                             .send_ticket(
                                                 player.machineHash.as_ref().unwrap(),
                                                 player.entitlementId.as_ref().unwrap(),
+                                                player.accountIndex.as_ref().unwrap(),
                                                 sv_license_key_token,
                                             )
                                             .await;
@@ -218,11 +221,15 @@ impl ThreadService {
                             let heartbeat_service = &heartbeat_service_cloned;
 
                             async move {
-                                if player.machineHash.is_some() && player.entitlementId.is_some() {
+                                if player.machineHash.is_some()
+                                    && player.entitlementId.is_some()
+                                    && player.accountIndex.is_some()
+                                {
                                     let result = heartbeat_service
                                         .send_entitlement(
                                             player.machineHash.as_ref().unwrap(),
                                             player.entitlementId.as_ref().unwrap(),
+                                            player.accountIndex.as_ref().unwrap(),
                                         )
                                         .await;
 
