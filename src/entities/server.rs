@@ -1,10 +1,10 @@
-use sqlx::FromRow;
+use compact_str::CompactString;
 
-#[derive(Debug, FromRow)]
+#[derive(Debug)]
 pub struct Server {
-    pub id: Option<String>,
-    pub name: Option<String>,
-    pub cfxLicense: Option<String>,
-    pub cfxCode: Option<String>,
-    pub sv_licenseKeyToken: Option<String>,
+    pub id: CompactString,
+    pub name: Option<CompactString>,
+    pub cfx_license: CompactString,
+    pub cfx_code: Option<CompactString>,
+    pub sv_license_key_token: Option<CompactString>,
 }

@@ -1,30 +1,30 @@
 use crate::{
     config::Database,
+    entities::StockAccount,
     error::{AppResult, ThreadError},
     repositories::StockAccountRepository,
     services::HeartbeatService,
 };
-use ahash::{AHashMap, AHashSet};
+use ahash::AHashMap;
+use compact_str::CompactString;
 use futures::{stream, StreamExt};
+use parking_lot::{Mutex, RwLock};
 use std::{sync::Arc, time::Duration};
-use tokio::{
-    sync::{Mutex, RwLock},
-    task::JoinHandle,
-    time::Instant,
-};
-use tracing::info;
+use tokio::{task::JoinHandle, time::Instant};
+use tracing::{info, warn};
 
-const THREAD_SLEEP_TIME: Duration = Duration::from_secs(6);
+const THREAD_SLEEP_TIME: Duration = Duration::from_secs(7);
 const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(30);
 
+#[derive(Clone)]
 pub struct ThreadService {
     stock_repo: Arc<StockAccountRepository>,
-    heartbeat: Arc<RwLock<AHashMap<String, Mutex<Instant>>>>,
-    threads: Arc<RwLock<AHashMap<String, Arc<JoinHandle<()>>>>>,
+    heartbeat: Arc<RwLock<AHashMap<CompactString, Mutex<Instant>>>>,
+    threads: Arc<RwLock<AHashMap<CompactString, Arc<JoinHandle<()>>>>>,
 }
 
 impl ThreadService {
-    pub fn new(db: &Arc<Database>) -> Self {
+    pub fn new(db: &Database) -> Self {
         Self {
             threads: Arc::new(RwLock::new(AHashMap::new())),
             heartbeat: Arc::new(RwLock::new(AHashMap::new())),
@@ -32,15 +32,15 @@ impl ThreadService {
         }
     }
 
-    pub async fn get(&self, key: &str) -> bool {
-        self.threads.read().await.contains_key(key)
+    pub fn get(&self, key: &str) -> bool {
+        self.threads.read().contains_key(key)
     }
 
-    pub async fn heartbeat(&self, key: &str) -> AppResult<()> {
-        let heartbeat_map = self.heartbeat.read().await;
+    pub fn heartbeat(&self, key: &str) -> AppResult<()> {
+        let heartbeat_map = self.heartbeat.read();
 
         if let Some(heartbeat) = heartbeat_map.get(key) {
-            let mut heartbeat = heartbeat.lock().await;
+            let mut heartbeat = heartbeat.lock();
             *heartbeat = Instant::now();
         } else {
             Err(ThreadError::NotFound)?
@@ -51,23 +51,18 @@ impl ThreadService {
 
     pub async fn spawn_thread(
         &self,
-        key: &str,
-        server_id: &str,
-        sv_license_key_token: &str,
-        server_name: &str,
+        key: CompactString,
+        server_id: CompactString,
+        sv_license_key_token: CompactString,
+        server_name: CompactString,
     ) -> AppResult<()> {
-        if !self.get(key).await {
+        if !self.get(&key) {
             let handle = self
-                .tokio_thread(
-                    Arc::from(key),
-                    Arc::from(server_id),
-                    Arc::from(sv_license_key_token),
-                    Arc::from(server_name),
-                )
+                .tokio_thread(key.clone(), server_id, sv_license_key_token, server_name)
                 .await;
 
             info!("Thread {:#?}", handle);
-            let mut threads = self.threads.write().await;
+            let mut threads = self.threads.write();
             threads.insert(key.to_owned(), Arc::new(handle));
 
             Ok(())
@@ -79,128 +74,108 @@ impl ThreadService {
     #[inline(always)]
     async fn tokio_thread(
         &self,
-        key: Arc<str>,
-        server_id: Arc<str>,
-        sv_license_key_token: Arc<str>,
-        server_name: Arc<str>,
+        key: CompactString,
+        server_id: CompactString,
+        sv_license_key_token: CompactString,
+        server_name: CompactString,
     ) -> JoinHandle<()> {
-        let threads = self.threads.clone();
         let stock_repo = self.stock_repo.clone();
+        let threads = self.threads.clone();
         let heartbeat = self.heartbeat.clone();
-        let heartbeat_service = Arc::new(HeartbeatService::new());
+        let heartbeat_service = HeartbeatService::new();
 
         {
-            let mut heartbeat = heartbeat.write().await;
-            heartbeat.insert(key.to_owned().to_string(), Mutex::new(Instant::now()));
+            let mut heartbeat = heartbeat.write();
+            heartbeat.insert(key.clone(), Mutex::new(Instant::now()));
         }
 
         info!("Spawning thread for {}", server_name);
 
         tokio::spawn(async move {
             info!("Spawned thread for {}", server_name);
-            let mut assigned_ids = AHashSet::new();
+            let sv_license_key_token: Arc<str> = Arc::from(sv_license_key_token.to_string());
+            let new_players: Arc<RwLock<AHashMap<CompactString, StockAccount>>> =
+                Arc::from(RwLock::new(AHashMap::new()));
+            let assigned_players: Arc<RwLock<AHashMap<CompactString, StockAccount>>> =
+                Arc::from(RwLock::new(AHashMap::new()));
 
             loop {
                 tokio::time::sleep(THREAD_SLEEP_TIME).await;
                 let now = tokio::time::Instant::now();
-                let new_assigned_players: Arc<Mutex<AHashSet<crate::entities::StockAccount>>> =
-                    Arc::new(Mutex::new(AHashSet::new()));
 
                 {
-                    let heartbeats = heartbeat.read().await;
-                    let last_heartbeat = heartbeats.get(&*key).unwrap().lock().await;
+                    let mut heartbeats = heartbeat.upgradable_read();
+                    let last_heartbeat = heartbeats.get(&key).unwrap().lock();
 
                     if now.duration_since(*last_heartbeat).gt(&HEARTBEAT_TIMEOUT) {
                         drop(last_heartbeat);
-                        drop(heartbeats);
+                        threads.write().remove(&key);
+
+                        heartbeats.with_upgraded(|heartbeats| {
+                            heartbeats.remove(&key);
+                        });
 
                         info!("Thread {} timed out", server_name);
-                        threads.write().await.remove(&*key).unwrap();
-
-                        {
-                            let mut heartbeat = heartbeat.write().await;
-                            heartbeat.remove(&*key);
-                        }
-
                         break;
                     }
                 }
 
-                let mut players = stock_repo.find_all_by_server(&server_id).await;
-
                 {
-                    players.retain(|player| {
-                        if let Some(expire_on) = &player.expireOn {
-                            if expire_on.lt(&chrono::Utc::now()) {
-                                info!(
-                                    "Bot {} expired at {}",
-                                    player.id.as_ref().unwrap(),
-                                    expire_on
-                                );
-                                return false;
+                    let Ok(db_players) = stock_repo.find_all_by_server(&server_id).await else {
+                        info!("Thread {} timed out", server_name);
+                        break;
+                    };
+
+                    let mut new_players = new_players.write();
+                    let mut assigned_players = assigned_players.write();
+
+                    for (id, player) in db_players.iter() {
+                        if let Some(expire) = &player.expire_on {
+                            if expire.lt(&chrono::Utc::now()) {
+                                info!("Bot {} expired at {}", id, expire);
+                                continue;
                             }
                         }
-                        true
-                    });
-                }
 
-                let new_players = Arc::new(players);
-
-                {
-                    let mut new_assigned_players = new_assigned_players.lock().await;
-
-                    for player in &*new_players {
-                        if let Some(id) = &player.id {
-                            if !assigned_ids.contains(id) {
-                                new_assigned_players.insert(player.clone());
-                                assigned_ids.insert(id.to_owned());
-                            }
+                        if !assigned_players.contains_key(id) {
+                            new_players.insert(id.clone(), player.clone());
+                            assigned_players.insert(id.clone(), player.clone());
                         }
                     }
 
-                    assigned_ids.retain(|id| {
-                        new_players.iter().any(|player| {
-                            if let Some(player_id) = &player.id {
-                                player_id == id
-                            } else {
-                                false
-                            }
-                        })
-                    });
+                    assigned_players.retain(|id, _player| db_players.contains_key(id));
                 }
 
                 let assigned_players_task = tokio::task::spawn({
                     let sv_license_key_token = sv_license_key_token.clone();
-                    let assigned_players = new_assigned_players.clone();
                     let heartbeat_service = heartbeat_service.clone();
+                    let assigned_players = assigned_players.clone();
 
                     async move {
-                        stream::iter(assigned_players.lock().await.iter())
-                            .for_each_concurrent(None, |player| {
-                                let sv_license_key_token = &sv_license_key_token;
-                                let heartbeat_service = &heartbeat_service;
+                        stream::iter(assigned_players.read().iter())
+                            .for_each_concurrent(None, |(_id, player)| {
+                                if player.machine_hash.is_none() || player.entitlement_id.is_none() || player.account_index.is_none() {
+                                    warn!("Player {} missing machineHash, entitlementId or accountIndex", &player.id);
+                                }
+
+                                let sv_license_key_token = sv_license_key_token.clone();
+                                let heartbeat_service = heartbeat_service.clone();
 
                                 async move {
-                                    if player.machineHash.is_some()
-                                        && player.entitlementId.is_some()
-                                        && player.accountIndex.is_some()
-                                    {
-                                        let result = heartbeat_service
-                                            .send_ticket(
-                                                player.machineHash.as_ref().unwrap(),
-                                                player.entitlementId.as_ref().unwrap(),
-                                                player.accountIndex.as_ref().unwrap(),
-                                                sv_license_key_token,
-                                            )
-                                            .await;
+                                    let result = heartbeat_service
+                                        .send_ticket(
+                                            player.machine_hash.as_ref().unwrap(),
+                                            player.entitlement_id.as_ref().unwrap(),
+                                            player.account_index.as_ref().unwrap(),
+                                            &sv_license_key_token,
+                                        )
+                                        .await;
 
-                                        if let Err(error) = result {
-                                            info!(
-                                                "Player {} ticket error: {:?}",
-                                                player.id.as_ref().unwrap(),
-                                                error
-                                            );
-                                        }
+                                    if let Err(error) = result {
+                                        info!(
+                                            "Player {} ticket error: {:?}",
+                                            &player.id, error
+                                        );
                                     }
                                 }
                             })
@@ -208,52 +183,51 @@ impl ThreadService {
                     }
                 });
 
-                let heartbeat_service_cloned = heartbeat_service.clone();
-                let new_players_task = tokio::task::spawn(async move {
-                    if new_players.is_empty() {
-                        return;
-                    }
+                let new_players_task = tokio::task::spawn({
+                    let heartbeat_service = heartbeat_service.clone();
+                    let cloned_new_players = new_players.clone();
 
-                    let new_players_cloned = new_players.clone();
+                    async move {
+                        stream::iter(cloned_new_players.read().iter())
+                            .for_each_concurrent(None, |(_id, player)| {
+                                if player.machine_hash.is_none() || player.entitlement_id.is_none() || player.account_index.is_none() {
+                                    warn!("Player {} missing machineHash, entitlementId or accountIndex", &player.id);
+                                }
 
-                    stream::iter(&*new_players_cloned)
-                        .for_each_concurrent(None, |player| {
-                            let heartbeat_service = &heartbeat_service_cloned;
+                                let heartbeat_service = heartbeat_service.clone();
 
-                            async move {
-                                if player.machineHash.is_some()
-                                    && player.entitlementId.is_some()
-                                    && player.accountIndex.is_some()
-                                {
+                                async move {
                                     let result = heartbeat_service
                                         .send_entitlement(
-                                            player.machineHash.as_ref().unwrap(),
-                                            player.entitlementId.as_ref().unwrap(),
-                                            player.accountIndex.as_ref().unwrap(),
+                                            player.machine_hash.as_ref().unwrap(),
+                                            player.entitlement_id.as_ref().unwrap(),
+                                            player.account_index.as_ref().unwrap(),
                                         )
                                         .await;
 
                                     if let Err(error) = result {
                                         info!(
                                             "Player {} heartbeat error: {:?}",
-                                            player.id.as_ref().unwrap(),
-                                            error
+                                            &player.id, error
                                         );
                                     }
                                 }
-                            }
-                        })
-                        .await;
+                            })
+                            .await;
+                    }
                 });
 
                 tokio::try_join!(assigned_players_task, new_players_task).unwrap_or_default();
+                let bots = assigned_players.read().len();
 
                 info!(
                     "Thread {:20} took {:5}ms for {:5} bots",
                     server_name,
                     now.elapsed().as_millis(),
-                    assigned_ids.len()
+                    bots
                 );
+
+                new_players.write().clear();
             }
         })
     }

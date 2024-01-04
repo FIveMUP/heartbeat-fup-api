@@ -12,6 +12,8 @@ pub enum AppError {
     Thread(#[from] ThreadError),
     #[error(transparent)]
     CfxApi(#[from] CfxApiError),
+    #[error(transparent)]
+    Sqlx(#[from] sqlx::Error),
 }
 
 impl IntoResponse for AppError {
@@ -20,6 +22,13 @@ impl IntoResponse for AppError {
             AppError::Server(e) => e.into_response(),
             AppError::Thread(e) => e.into_response(),
             AppError::CfxApi(e) => e.into_response(),
+            AppError::Sqlx(e) => {
+                tracing::error!("Sqlx error: {}", e);
+                Response::builder()
+                    .status(500)
+                    .body("Internal server error".into())
+                    .unwrap()
+            }
         }
     }
 }

@@ -2,7 +2,7 @@ use dotenvy::var;
 use sqlx::MySqlPool;
 use tracing::info;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Database {
     pub pool: MySqlPool,
 }

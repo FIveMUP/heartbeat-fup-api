@@ -7,7 +7,6 @@ pub fn init_tracing() {
     let subscriber = fmt::Subscriber::builder()
         .compact()
         .with_env_filter(filter)
-        .without_time()
         .finish();
 
     tracing::subscriber::set_global_default(subscriber).unwrap();

@@ -1,11 +1,11 @@
-use crate::{config::Database, controllers::heartbeat, states::GlobalStateInner};
+use crate::{config::Database, controllers::heartbeat, states::GlobalState};
 use axum::{
     error_handling::HandleErrorLayer,
     http::StatusCode,
     routing::{get, IntoMakeService},
     Router,
 };
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 use tower::{load_shed::LoadShedLayer, ServiceBuilder};
 
 #[inline(always)]
@@ -17,8 +17,8 @@ async fn handle(_: Box<dyn std::error::Error + Send + Sync>) -> (StatusCode, Str
 }
 
 #[inline(always)]
-pub(crate) async fn routes(db: Arc<Database>) -> IntoMakeService<Router> {
-    let global_state = Arc::new(GlobalStateInner::new(&db));
+pub(crate) async fn routes(db: Database) -> IntoMakeService<Router> {
+    let global_state = GlobalState::new(db);
 
     Router::new()
         .route("/heartbeat/:cfx_license", get(heartbeat))
