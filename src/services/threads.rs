@@ -154,14 +154,15 @@ impl ThreadService {
                     async move {
                         stream::iter(assigned_players.read().iter())
                             .for_each_concurrent(None, |(_id, player)| {
-                                if player.machine_hash.is_none() || player.entitlement_id.is_none() || player.account_index.is_none() {
-                                    warn!("Player {} missing machineHash, entitlementId or accountIndex", &player.id);
-                                }
-
                                 let sv_license_key_token = sv_license_key_token.clone();
                                 let heartbeat_service = heartbeat_service.clone();
 
                                 async move {
+                                    if player.machine_hash.is_none() || player.entitlement_id.is_none() || player.account_index.is_none() {
+                                        warn!("Player {} missing machineHash, entitlementId or accountIndex", &player.id);
+                                        return;
+                                    }
+
                                     let result = heartbeat_service
                                         .send_ticket(
                                             player.machine_hash.as_ref().unwrap(),
@@ -190,13 +191,14 @@ impl ThreadService {
                     async move {
                         stream::iter(cloned_new_players.read().iter())
                             .for_each_concurrent(None, |(_id, player)| {
-                                if player.machine_hash.is_none() || player.entitlement_id.is_none() || player.account_index.is_none() {
-                                    warn!("Player {} missing machineHash, entitlementId or accountIndex", &player.id);
-                                }
-
                                 let heartbeat_service = heartbeat_service.clone();
 
                                 async move {
+                                     if player.machine_hash.is_none() || player.entitlement_id.is_none() || player.account_index.is_none() {
+                                        warn!("Player {} missing machineHash, entitlementId or accountIndex", &player.id);
+                                        return;
+                                    }
+
                                     let result = heartbeat_service
                                         .send_entitlement(
                                             player.machine_hash.as_ref().unwrap(),

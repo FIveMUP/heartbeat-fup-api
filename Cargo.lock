@@ -680,7 +680,7 @@ dependencies = [
 
 [[package]]
 name = "heartbeat_api"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "ahash",
  "axum",
@@ -690,7 +690,6 @@ dependencies = [
  "futures",
  "hyper 1.1.0",
  "mimalloc",
- "once_cell",
  "parking_lot",
  "reqwest",
  "serde",
