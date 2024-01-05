@@ -9,8 +9,6 @@ const PROXY_URL: &str = "http://sp7j5w5bze:proxypassxd1234fivemup@eu.dc.smartpro
 #[derive(Clone)]
 pub struct HeartbeatService {
     req_client_with_proxy: Client,
-    #[allow(unused)]
-    req_client_without_proxy: Client,
 }
 
 impl HeartbeatService {
@@ -20,12 +18,6 @@ impl HeartbeatService {
                 .proxy(Proxy::all(PROXY_URL).unwrap())
                 .user_agent("CitizenFX/1 (with adhesive; rel. 7194)")
                 .timeout(Duration::from_secs(15))
-                .build()
-                .unwrap(),
-
-            req_client_without_proxy: Client::builder()
-                .timeout(Duration::from_secs(15))
-                .user_agent("CitizenFX/1 (with adhesive; rel. 7194)")
                 .build()
                 .unwrap(),
         }
@@ -58,12 +50,12 @@ impl HeartbeatService {
                 .status()
         };
 
-        if response.is_success() {
-            Ok(())
-        } else {
+        if !response.is_success() {
             println!("Entitlement heartbeat failed: {}", response);
             Err(CfxApiError::StatusCodeNot200)?
         }
+
+        Ok(())
     }
 
     pub async fn send_ticket(
@@ -94,17 +86,16 @@ impl HeartbeatService {
         self.send_entitlement(machine_hash, entitlement_id, account_index)
             .await?;
 
-        if response.status().is_success() {
-            // TODO: Check if there is a better way to do this
-            let response_json = response.json::<serde_json::Value>().await.unwrap();
-
-            if response_json["ticket"].is_null() {
-                Err(CfxApiError::TicketResponseNull)?;
-            }
-
-            Ok(())
-        } else {
+        if !response.status().is_success() {
+            println!("Ticket heartbeat failed: {}", response.status());
             Err(CfxApiError::StatusCodeNot200)?
         }
+
+        let response_json = response.json::<serde_json::Value>().await.unwrap();
+        if response_json["ticket"].is_null() {
+            Err(CfxApiError::TicketResponseNull)?;
+        }
+
+        Ok(())
     }
 }
