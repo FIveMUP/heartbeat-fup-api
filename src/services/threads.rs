@@ -60,7 +60,7 @@ impl ThreadService {
                 .tokio_thread(key.clone(), server_id, sv_license_key_token, server_name)
                 .await;
 
-            info!("Thread {:#?}", handle);
+            info!("Thread {:?}", handle);
             let mut threads = self.threads.write();
             threads.insert(key.to_owned(), Arc::new(handle));
 
