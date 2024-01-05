@@ -1,10 +1,8 @@
-use compact_str::CompactString;
-
 #[derive(Debug)]
 pub struct Server {
-    pub id: CompactString,
-    pub name: Option<CompactString>,
-    pub cfx_license: CompactString,
-    pub cfx_code: Option<CompactString>,
-    pub sv_license_key_token: Option<CompactString>,
+    pub id: String,
+    pub name: Option<String>,
+    pub cfx_license: String,
+    pub cfx_code: Option<String>,
+    pub sv_license_key_token: Option<String>,
 }

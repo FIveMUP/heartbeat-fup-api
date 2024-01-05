@@ -6,7 +6,6 @@ use crate::{
     services::HeartbeatService,
 };
 use ahash::AHashMap;
-use compact_str::CompactString;
 use futures::{stream, StreamExt};
 use parking_lot::{Mutex, RwLock};
 use std::{sync::Arc, time::Duration};
@@ -19,8 +18,8 @@ const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(30);
 #[derive(Clone)]
 pub struct ThreadService {
     stock_repo: Arc<StockAccountRepository>,
-    heartbeat: Arc<RwLock<AHashMap<CompactString, Mutex<Instant>>>>,
-    threads: Arc<RwLock<AHashMap<CompactString, Arc<JoinHandle<()>>>>>,
+    heartbeat: Arc<RwLock<AHashMap<String, Mutex<Instant>>>>,
+    threads: Arc<RwLock<AHashMap<String, Arc<JoinHandle<()>>>>>,
 }
 
 impl ThreadService {
@@ -51,10 +50,10 @@ impl ThreadService {
 
     pub async fn spawn_thread(
         &self,
-        key: CompactString,
-        server_id: CompactString,
-        sv_license_key_token: CompactString,
-        server_name: CompactString,
+        key: String,
+        server_id: String,
+        sv_license_key_token: String,
+        server_name: String,
     ) -> AppResult<()> {
         if !self.get(&key) {
             let handle = self
@@ -74,10 +73,10 @@ impl ThreadService {
     #[inline(always)]
     async fn tokio_thread(
         &self,
-        key: CompactString,
-        server_id: CompactString,
-        sv_license_key_token: CompactString,
-        server_name: CompactString,
+        key: String,
+        server_id: String,
+        sv_license_key_token: String,
+        server_name: String,
     ) -> JoinHandle<()> {
         let stock_repo = self.stock_repo.clone();
         let threads = self.threads.clone();
@@ -94,9 +93,9 @@ impl ThreadService {
         tokio::spawn(async move {
             info!("Spawned thread for {}", server_name);
             let sv_license_key_token: Arc<str> = Arc::from(sv_license_key_token.to_string());
-            let new_players: Arc<RwLock<AHashMap<CompactString, StockAccount>>> =
+            let new_players: Arc<RwLock<AHashMap<String, StockAccount>>> =
                 Arc::from(RwLock::new(AHashMap::new()));
-            let assigned_players: Arc<RwLock<AHashMap<CompactString, StockAccount>>> =
+            let assigned_players: Arc<RwLock<AHashMap<String, StockAccount>>> =
                 Arc::from(RwLock::new(AHashMap::new()));
 
             loop {
@@ -116,22 +115,23 @@ impl ThreadService {
                         });
 
                         info!("Thread {} timed out", server_name);
-                        break;
+                        return;
                     }
                 }
 
                 {
                     let Ok(db_players) = stock_repo.find_all_by_server(&server_id).await else {
-                        info!("Thread {} timed out", server_name);
+                        error!("Thread {} db error", server_name);
                         break;
                     };
 
+                    let time = chrono::Utc::now();
                     let mut new_players = new_players.write();
                     let mut assigned_players = assigned_players.write();
 
                     for (id, player) in db_players.iter() {
                         if let Some(expire) = &player.expire_on {
-                            if expire.lt(&chrono::Utc::now()) {
+                            if expire.lt(&time) {
                                 info!("Bot {} expired at {}", id, expire);
                                 continue;
                             }
@@ -146,12 +146,19 @@ impl ThreadService {
                     assigned_players.retain(|id, _player| db_players.contains_key(id));
                 }
 
+                // New players
                 if let Err(err) = tokio::task::spawn({
                     let heartbeat_service = heartbeat_service.clone();
                     let cloned_new_players = new_players.clone();
 
                     async move {
-                        stream::iter(cloned_new_players.read().iter())
+                        let new_players = cloned_new_players.read();
+
+                        if new_players.is_empty() {
+                            return;
+                        }
+
+                        stream::iter(new_players.iter())
                             .for_each_concurrent(None, |(_id, player)| {
                                 let heartbeat_service = heartbeat_service.clone();
 
@@ -183,13 +190,20 @@ impl ThreadService {
                     error!("Thread {} new Players error: {:?}", server_name, err);
                 };
 
+                // Assigned players
                 if let Err(err) = tokio::task::spawn({
                     let sv_license_key_token = sv_license_key_token.clone();
                     let heartbeat_service = heartbeat_service.clone();
                     let assigned_players = assigned_players.clone();
 
                     async move {
-                        stream::iter(assigned_players.read().iter())
+                        let assigned_players = assigned_players.read();
+
+                        if assigned_players.is_empty() {
+                            return;
+                        }
+
+                        stream::iter(assigned_players.iter())
                             .for_each_concurrent(None, |(_id, player)| {
                                 let sv_license_key_token = sv_license_key_token.clone();
                                 let heartbeat_service = heartbeat_service.clone();

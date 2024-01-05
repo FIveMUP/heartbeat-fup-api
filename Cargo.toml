@@ -1,6 +1,6 @@
 [package]
 name = "heartbeat_api"
-version = "1.2.1"
+version = "1.2.3"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -32,7 +32,6 @@ parking_lot = { version = "0.12.1", features = [
     "hardware-lock-elision",
     "send_guard",
 ] }
-compact_str = { version = "0.7.1", features = ["serde"] }
 
 [profile.release]
 debug = 0
