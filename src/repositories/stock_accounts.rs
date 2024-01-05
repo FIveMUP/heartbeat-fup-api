@@ -1,6 +1,7 @@
 use crate::{config::Database, entities::StockAccount, error::AppResult};
 use ahash::AHashMap;
 use chrono::{DateTime, Local};
+use compact_str::CompactString;
 use sqlx::Row;
 
 #[derive(Clone)]
@@ -36,9 +37,15 @@ impl StockAccountRepository {
                 id: row.try_get::<String, _>("id")?.into(),
                 owner: row.try_get::<String, _>("owner")?.into(),
                 expire_on: row.try_get::<Option<DateTime<Local>>, _>("expireOn")?,
-                entitlement_id: row.try_get::<Option<String>, _>("entitlementId")?,
-                account_index: row.try_get::<Option<String>, _>("accountIndex")?,
-                machine_hash: row.try_get::<Option<String>, _>("machineHash")?,
+                entitlement_id: row
+                    .try_get::<Option<String>, _>("entitlementId")?
+                    .map(CompactString::from),
+                account_index: row
+                    .try_get::<Option<String>, _>("accountIndex")?
+                    .map(CompactString::from),
+                machine_hash: row
+                    .try_get::<Option<String>, _>("machineHash")?
+                    .map(CompactString::from),
             };
 
             map.insert(id, account);

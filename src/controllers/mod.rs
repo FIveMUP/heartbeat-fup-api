@@ -2,12 +2,13 @@ use crate::error::{AppResult, ServerError};
 use crate::states::GlobalState;
 use axum::extract::{Path, State};
 use axum::response::{IntoResponse, Response};
+use compact_str::CompactString;
 use hyper::StatusCode;
 
 #[inline(always)]
 pub(crate) async fn heartbeat(
     State(state): State<GlobalState>,
-    Path(cfx_license): Path<String>,
+    Path(cfx_license): Path<CompactString>,
 ) -> AppResult<Response> {
     let Some(server_data) = state
         .server_repository

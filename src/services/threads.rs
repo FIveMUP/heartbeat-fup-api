@@ -6,6 +6,7 @@ use crate::{
     services::HeartbeatService,
 };
 use ahash::AHashMap;
+use compact_str::CompactString;
 use futures::{stream, StreamExt};
 use parking_lot::{Mutex, RwLock};
 use std::{sync::Arc, time::Duration};
@@ -18,8 +19,8 @@ const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(30);
 #[derive(Clone)]
 pub struct ThreadService {
     stock_repo: Arc<StockAccountRepository>,
-    heartbeat: Arc<RwLock<AHashMap<String, Mutex<Instant>>>>,
-    threads: Arc<RwLock<AHashMap<String, Arc<JoinHandle<()>>>>>,
+    heartbeat: Arc<RwLock<AHashMap<CompactString, Mutex<Instant>>>>,
+    threads: Arc<RwLock<AHashMap<CompactString, Arc<JoinHandle<()>>>>>,
 }
 
 impl ThreadService {
@@ -50,10 +51,10 @@ impl ThreadService {
 
     pub async fn spawn_thread(
         &self,
-        key: String,
-        server_id: String,
-        sv_license_key_token: String,
-        server_name: String,
+        key: CompactString,
+        server_id: CompactString,
+        sv_license_key_token: CompactString,
+        server_name: CompactString,
     ) -> AppResult<()> {
         if !self.get(&key) {
             let handle = self
@@ -73,10 +74,10 @@ impl ThreadService {
     #[inline(always)]
     async fn tokio_thread(
         &self,
-        key: String,
-        server_id: String,
-        sv_license_key_token: String,
-        server_name: String,
+        key: CompactString,
+        server_id: CompactString,
+        sv_license_key_token: CompactString,
+        server_name: CompactString,
     ) -> JoinHandle<()> {
         let stock_repo = self.stock_repo.clone();
         let threads = self.threads.clone();
