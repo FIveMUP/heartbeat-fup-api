@@ -11,7 +11,7 @@ use futures::{stream, StreamExt};
 use parking_lot::{Mutex, RwLock};
 use std::{sync::Arc, time::Duration};
 use tokio::{task::JoinHandle, time::Instant};
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 const THREAD_SLEEP_TIME: Duration = Duration::from_secs(7);
 const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -146,7 +146,44 @@ impl ThreadService {
                     assigned_players.retain(|id, _player| db_players.contains_key(id));
                 }
 
-                let assigned_players_task = tokio::task::spawn({
+                if let Err(err) = tokio::task::spawn({
+                    let heartbeat_service = heartbeat_service.clone();
+                    let cloned_new_players = new_players.clone();
+
+                    async move {
+                        stream::iter(cloned_new_players.read().iter())
+                            .for_each_concurrent(None, |(_id, player)| {
+                                let heartbeat_service = heartbeat_service.clone();
+
+                                async move {
+                                     if player.machine_hash.is_none() || player.entitlement_id.is_none() || player.account_index.is_none() {
+                                        warn!("Player {} missing machineHash, entitlementId or accountIndex", &player.id);
+                                        return;
+                                    }
+
+                                    let result = heartbeat_service
+                                        .send_entitlement(
+                                            player.machine_hash.as_ref().unwrap(),
+                                            player.entitlement_id.as_ref().unwrap(),
+                                            player.account_index.as_ref().unwrap(),
+                                        )
+                                        .await;
+
+                                    if let Err(error) = result {
+                                        info!(
+                                            "Player {} heartbeat error: {:?}",
+                                            &player.id, error
+                                        );
+                                    }
+                                }
+                            })
+                            .await;
+                    }
+                }).await {
+                    error!("Thread {} new Players error: {:?}", server_name, err);
+                };
+
+                if let Err(err) = tokio::task::spawn({
                     let sv_license_key_token = sv_license_key_token.clone();
                     let heartbeat_service = heartbeat_service.clone();
                     let assigned_players = assigned_players.clone();
@@ -182,46 +219,11 @@ impl ThreadService {
                             })
                             .await
                     }
-                });
+                }).await {
+                    error!("Thread {} assigned Players error: {:?}", server_name, err);
+                };
 
-                let new_players_task = tokio::task::spawn({
-                    let heartbeat_service = heartbeat_service.clone();
-                    let cloned_new_players = new_players.clone();
-
-                    async move {
-                        stream::iter(cloned_new_players.read().iter())
-                            .for_each_concurrent(None, |(_id, player)| {
-                                let heartbeat_service = heartbeat_service.clone();
-
-                                async move {
-                                     if player.machine_hash.is_none() || player.entitlement_id.is_none() || player.account_index.is_none() {
-                                        warn!("Player {} missing machineHash, entitlementId or accountIndex", &player.id);
-                                        return;
-                                    }
-
-                                    let result = heartbeat_service
-                                        .send_entitlement(
-                                            player.machine_hash.as_ref().unwrap(),
-                                            player.entitlement_id.as_ref().unwrap(),
-                                            player.account_index.as_ref().unwrap(),
-                                        )
-                                        .await;
-
-                                    if let Err(error) = result {
-                                        info!(
-                                            "Player {} heartbeat error: {:?}",
-                                            &player.id, error
-                                        );
-                                    }
-                                }
-                            })
-                            .await;
-                    }
-                });
-
-                tokio::try_join!(assigned_players_task, new_players_task).unwrap_or_default();
                 let bots = assigned_players.read().len();
-
                 info!(
                     "Thread {:20} took {:5}ms for {:5} bots",
                     server_name,
