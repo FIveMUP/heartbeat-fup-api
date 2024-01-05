@@ -1,5 +1,8 @@
 use crate::error::{AppResult, CfxApiError};
-use reqwest::{header::CONTENT_TYPE, Client, Proxy};
+use reqwest::{
+    header::{HeaderMap, HeaderValue, CONTENT_TYPE},
+    Client, Proxy,
+};
 use std::time::Duration;
 
 const FIVEM_URL: &str = "https://lambda.fivem.net/api";
@@ -8,15 +11,23 @@ const PROXY_URL: &str = "http://sp7j5w5bze:proxypassxd1234fivemup@eu.dc.smartpro
 
 #[derive(Clone)]
 pub struct HeartbeatService {
-    req_client_with_proxy: Client,
+    client: Client,
 }
 
 impl HeartbeatService {
     pub fn new() -> Self {
+        let mut headers = HeaderMap::with_capacity(1);
+
+        headers.insert(
+            CONTENT_TYPE,
+            HeaderValue::from_static("application/x-www-form-urlencoded"),
+        );
+
         Self {
-            req_client_with_proxy: Client::builder()
+            client: Client::builder()
                 .proxy(Proxy::all(PROXY_URL).unwrap())
                 .user_agent("CitizenFX/1 (with adhesive; rel. 7194)")
+                .default_headers(headers)
                 .timeout(Duration::from_secs(15))
                 .build()
                 .unwrap(),
@@ -37,9 +48,8 @@ impl HeartbeatService {
                 machine_hash
             );
 
-            self.req_client_with_proxy
+            self.client
                 .post(format!("{EID_URL}/validate/entitlement"))
-                .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
                 .body(entitlement_heartbeat)
                 .send()
                 .await
@@ -74,9 +84,8 @@ impl HeartbeatService {
                 account_index
             );
 
-            self.req_client_with_proxy
+            self.client
                 .post(format!("{FIVEM_URL}/ticket/create"))
-                .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
                 .body(ticket_heartbeat)
                 .send()
                 .await
