@@ -17,7 +17,7 @@ impl StockAccountRepository {
     pub async fn find_all_by_server(
         &self,
         server: &str,
-    ) -> AppResult<AHashMap<String, StockAccount>> {
+    ) -> AppResult<AHashMap<CompactString, StockAccount>> {
         let rows = sqlx::query(
             r#"
                 SELECT id, owner, expireOn, entitlementId, accountIndex, machineHash
@@ -31,7 +31,7 @@ impl StockAccountRepository {
 
         let mut map = AHashMap::with_capacity(rows.len());
         for row in rows {
-            let id = row.try_get::<String, _>("id")?;
+            let id = row.try_get::<String, _>("id")?.into();
 
             let account = StockAccount {
                 id: row.try_get::<String, _>("id")?.into(),
