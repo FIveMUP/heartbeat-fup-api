@@ -1,6 +1,5 @@
 use crate::{
     config::Database,
-    entities::StockAccount,
     error::{AppResult, ThreadError},
     repositories::StockAccountRepository,
     services::HeartbeatService,
@@ -94,10 +93,8 @@ impl ThreadService {
         tokio::spawn(async move {
             info!("Spawned thread for {}", server_name);
             let sv_license_key_token: Arc<str> = Arc::from(sv_license_key_token.to_string());
-            let new_players: Arc<RwLock<AHashMap<String, StockAccount>>> =
-                Arc::from(RwLock::new(AHashMap::new()));
-            let assigned_players: Arc<RwLock<AHashMap<String, StockAccount>>> =
-                Arc::from(RwLock::new(AHashMap::new()));
+            let new_players = Arc::from(RwLock::new(AHashMap::new()));
+            let assigned_players = Arc::from(RwLock::new(AHashMap::new()));
 
             loop {
                 tokio::time::sleep(THREAD_SLEEP_TIME).await;
