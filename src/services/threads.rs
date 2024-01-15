@@ -209,8 +209,8 @@ impl ThreadService {
                             return;
                         }
 
-                        stream::iter(new_players.iter())
-                            .for_each_concurrent(None, |(_id, player)| {
+                        stream::iter(new_players.values())
+                            .for_each_concurrent(None, |player| {
                                 let sv_license_key_token = sv_license_key_token.clone();
                                 let heartbeat_service = heartbeat_service.clone();
                                 let cloned_new_players = cloned_new_players.clone();
@@ -274,8 +274,8 @@ impl ThreadService {
                             return;
                         }
 
-                        stream::iter(assigned_players.iter())
-                            .for_each_concurrent(None, |(_id, player)| {
+                        stream::iter(assigned_players.values())
+                            .for_each_concurrent(None, |player| {
                                 let sv_license_key_token = sv_license_key_token.clone();
                                 let heartbeat_service = heartbeat_service.clone();
 
