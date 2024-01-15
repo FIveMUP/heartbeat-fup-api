@@ -138,8 +138,6 @@ impl ThreadService {
                         let mut new_players = new_players.write();
                         let mut assigned_players = assigned_players.write();
 
-                        // Restart thread if expired_count is greater than EXPIRE_RESTART_COUNT
-                        // This is to use the bot again if the bot is not expired anymore
                         if should_update_expired_players && expired_ids.len() > 0 {
                             expired_ids.drain();
                         }
