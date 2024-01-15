@@ -148,24 +148,29 @@ impl ThreadService {
                             }
 
                             if should_update_expired_players {
-                                if let Some(expire) = &player.expire_on {
-                                    if expire.lt(&time) {
-                                        expired_ids.insert(id.to_owned());
+                                let Some(expire_on) = &player.expire_on else {
+                                    warn!(
+                                        "Thread: {}, player {} missing expire_on",
+                                        server_name, id
+                                    );
+                                    continue;
+                                };
 
-                                        match assigned_players.contains_key(id) {
-                                            true => {
-                                                assigned_players.remove(id);
-                                            }
+                                if &time > expire_on {
+                                    expired_ids.insert(id.to_owned());
 
-                                            false => {
-                                                if new_players.contains_key(id) {
-                                                    new_players.remove(id);
-                                                }
-                                            }
+                                    match assigned_players.contains_key(id) {
+                                        true => {
+                                            assigned_players.remove(id);
                                         }
 
-                                        continue;
+                                        false => {
+                                            if new_players.contains_key(id) {
+                                                new_players.remove(id);
+                                            }
+                                        }
                                     }
+                                    continue;
                                 }
                             }
 
@@ -198,7 +203,7 @@ impl ThreadService {
                     let cloned_new_players = new_players.clone();
 
                     async move {
-                        let new_players = cloned_new_players.read();
+                        let new_players = cloned_new_players.read_arc();
 
                         if new_players.is_empty() {
                             return;
@@ -211,7 +216,7 @@ impl ThreadService {
                                 let cloned_new_players = cloned_new_players.clone();
 
                                 async move {
-                                     if player.machine_hash.is_none() || player.entitlement_id.is_none() || player.account_index.is_none() {
+                                    if player.machine_hash.is_none() || player.entitlement_id.is_none() || player.account_index.is_none() {
                                         warn!("Player {} missing machineHash, entitlementId or accountIndex", &player.id);
                                         return;
                                     }
@@ -263,7 +268,7 @@ impl ThreadService {
                     let assigned_players = assigned_players.clone();
 
                     async move {
-                        let assigned_players = assigned_players.read();
+                        let assigned_players = assigned_players.read_arc();
 
                         if assigned_players.is_empty() {
                             return;
