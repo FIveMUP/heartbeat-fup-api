@@ -145,6 +145,10 @@ impl ThreadService {
                     }
 
                     for (id, player) in db_players.iter() {
+                        if expired_ids.contains(id) {
+                            continue;
+                        }
+
                         if let Some(expire) = &player.expire_on {
                             if expire.lt(&time) {
                                 expired_ids.insert(id.to_owned());
