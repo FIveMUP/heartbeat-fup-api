@@ -182,6 +182,11 @@ impl ThreadService {
                             }
                         }
 
+                        if should_update_expired_players && expired_ids.len() == db_players.len() {
+                            error!("Thread: {}, all players expired", server_name);
+                            break;
+                        }
+
                         assigned_players.retain(|id, _player| db_players.contains_key(id));
                     }
                 }
