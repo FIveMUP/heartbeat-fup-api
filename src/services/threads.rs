@@ -139,7 +139,7 @@ impl ThreadService {
 
                     // Restart thread if expired_count is greater than EXPIRE_RESTART_COUNT
                     // This is to use the bot again if the bot is not expired anymore
-                    if expired_count.load(Ordering::Relaxed) > EXPIRE_RESTART_COUNT {
+                    if expired_count.load(Ordering::Relaxed) >= EXPIRE_RESTART_COUNT {
                         expired_count.store(0, Ordering::Relaxed);
                         expired_ids.clear();
                     }
@@ -149,23 +149,26 @@ impl ThreadService {
                             continue;
                         }
 
-                        if let Some(expire) = &player.expire_on {
-                            if expire.lt(&time) {
-                                expired_ids.insert(id.to_owned());
+                        // Check player expiration every 16 iterations
+                        if expired_count.load(Ordering::Relaxed) == 0 {
+                            if let Some(expire) = &player.expire_on {
+                                if expire.lt(&time) {
+                                    expired_ids.insert(id.to_owned());
 
-                                match assigned_players.contains_key(id) {
-                                    true => {
-                                        assigned_players.remove(id);
-                                    }
+                                    match assigned_players.contains_key(id) {
+                                        true => {
+                                            assigned_players.remove(id);
+                                        }
 
-                                    false => {
-                                        if new_players.contains_key(id) {
-                                            new_players.remove(id);
+                                        false => {
+                                            if new_players.contains_key(id) {
+                                                new_players.remove(id);
+                                            }
                                         }
                                     }
-                                }
 
-                                continue;
+                                    continue;
+                                }
                             }
                         }
 
@@ -182,6 +185,7 @@ impl ThreadService {
                         }
                     }
 
+                    expired_count.fetch_add(1, Ordering::Relaxed);
                     assigned_players.retain(|id, _player| db_players.contains_key(id));
                 }
 
