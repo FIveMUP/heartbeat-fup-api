@@ -128,7 +128,7 @@ impl ThreadService {
 
                 {
                     let Ok(db_players) = stock_repo.find_all_by_server(&server_id).await else {
-                        error!("Thread {} db error", server_name);
+                        error!("Thread: {}, got a Database error", server_name);
                         break;
                     };
 
