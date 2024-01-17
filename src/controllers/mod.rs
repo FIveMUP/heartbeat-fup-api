@@ -5,6 +5,7 @@ use axum::response::{IntoResponse, Response};
 use compact_str::CompactString;
 use hyper::StatusCode;
 
+// TODO: Secure this endpoint from a possible attack of sending a lot of requests and locking the rwlock
 #[inline(always)]
 pub(crate) async fn heartbeat(
     State(state): State<GlobalState>,
@@ -34,7 +35,8 @@ pub(crate) async fn heartbeat(
             .await?;
     }
 
-    state.threads_service.heartbeat(&cfx_license)?;
-
+    // TODO: Check if server is online and update
+    // Weak point because if we receive a various amount of requests the rwlock will be locked
+    state.threads_service.heartbeat(cfx_license)?;
     Ok(StatusCode::OK.into_response())
 }

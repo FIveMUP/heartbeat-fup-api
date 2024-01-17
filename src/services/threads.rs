@@ -8,7 +8,7 @@ use ahash::{AHashMap, AHashSet};
 use chrono::Utc;
 use compact_str::CompactString;
 use futures::{stream, StreamExt};
-use parking_lot::{Mutex, RwLock};
+use parking_lot::RwLock;
 use std::{sync::Arc, time::Duration};
 use tokio::{task::JoinHandle, time::Instant};
 use tracing::{error, info, warn};
@@ -23,15 +23,15 @@ const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(30);
 #[derive(Clone)]
 pub struct ThreadService {
     stock_repo: Arc<StockAccountRepository>,
-    heartbeat: Arc<RwLock<AHashMap<CompactString, Mutex<Instant>>>>,
+    heartbeat: Arc<RwLock<AHashMap<CompactString, Instant>>>,
     threads: Arc<RwLock<AHashMap<CompactString, Arc<JoinHandle<()>>>>>,
 }
 
 impl ThreadService {
     pub fn new(db: &Database) -> Self {
         Self {
-            threads: Arc::new(RwLock::new(AHashMap::new())),
-            heartbeat: Arc::new(RwLock::new(AHashMap::new())),
+            threads: Arc::new(RwLock::new(AHashMap::with_capacity(100))),
+            heartbeat: Arc::new(RwLock::new(AHashMap::with_capacity(100))),
             stock_repo: Arc::new(StockAccountRepository::new(db)),
         }
     }
@@ -40,12 +40,13 @@ impl ThreadService {
         self.threads.read().contains_key(key)
     }
 
-    pub fn heartbeat(&self, key: &str) -> AppResult<()> {
-        let heartbeat_map = self.heartbeat.read();
+    pub fn heartbeat(&self, key: CompactString) -> AppResult<()> {
+        let mut heartbeats = self.heartbeat.upgradable_read();
 
-        if let Some(heartbeat) = heartbeat_map.get(key) {
-            let mut heartbeat = heartbeat.lock();
-            *heartbeat = Instant::now();
+        if heartbeats.contains_key(&key) {
+            heartbeats.with_upgraded(|heartbeats| {
+                heartbeats.insert(key, Instant::now());
+            })
         } else {
             Err(ThreadError::NotFound)?
         }
@@ -90,7 +91,7 @@ impl ThreadService {
 
         {
             let mut heartbeat = heartbeat.write();
-            heartbeat.insert(key.clone(), Mutex::new(Instant::now()));
+            heartbeat.insert(key.clone(), Instant::now());
         }
 
         info!("Spawning thread for {}", server_name);
@@ -109,10 +110,9 @@ impl ThreadService {
 
                 {
                     let mut heartbeats = heartbeat.upgradable_read();
-                    let last_heartbeat = heartbeats.get(&key).unwrap().lock();
+                    let last_heartbeat = heartbeats.get(&key).unwrap();
 
                     if now.duration_since(*last_heartbeat) > HEARTBEAT_TIMEOUT {
-                        drop(last_heartbeat);
                         threads.write().remove(&key);
 
                         heartbeats.with_upgraded(|heartbeats| {
