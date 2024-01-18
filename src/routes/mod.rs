@@ -1,4 +1,6 @@
-use crate::{config::Database, controllers::heartbeat, states::GlobalState};
+use crate::{
+    config::Database, controllers::heartbeat, services::FivemService, states::GlobalState,
+};
 use axum::{
     error_handling::HandleErrorLayer,
     http::StatusCode,
@@ -18,7 +20,8 @@ async fn handle(_: Box<dyn std::error::Error + Send + Sync>) -> (StatusCode, Str
 
 #[inline(always)]
 pub(crate) async fn routes(db: Database) -> IntoMakeService<Router> {
-    let global_state = GlobalState::new(db);
+    let fivem_service = Box::leak(Box::new(FivemService::new()));
+    let global_state = GlobalState::new(db, fivem_service);
 
     Router::new()
         .route("/heartbeat/:cfx_license", get(heartbeat))

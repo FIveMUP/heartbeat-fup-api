@@ -2,7 +2,7 @@ use crate::{
     config::Database,
     error::{AppResult, ThreadError},
     repositories::StockAccountRepository,
-    services::HeartbeatService,
+    services::FivemService,
 };
 use ahash::{AHashMap, AHashSet};
 use chrono::Utc;
@@ -26,14 +26,16 @@ pub struct ThreadService {
     stock_repo: Arc<StockAccountRepository>,
     heartbeat: Arc<RwLock<AHashMap<CompactString, Instant>>>,
     threads: Arc<RwLock<AHashMap<CompactString, Arc<JoinHandle<()>>>>>,
+    fivem_service: &'static FivemService,
 }
 
 impl ThreadService {
-    pub fn new(db: &Database) -> Self {
+    pub fn new(db: &Database, fivem_service: &'static FivemService) -> Self {
         Self {
             threads: Arc::new(RwLock::new(AHashMap::with_capacity(100))),
             heartbeat: Arc::new(RwLock::new(AHashMap::with_capacity(100))),
             stock_repo: Arc::new(StockAccountRepository::new(db)),
+            fivem_service,
         }
     }
 
@@ -93,7 +95,7 @@ impl ThreadService {
         let stock_repo = self.stock_repo.clone();
         let threads = self.threads.clone();
         let heartbeat = self.heartbeat.clone();
-        let heartbeat_service = HeartbeatService::new();
+        let fivem_service = self.fivem_service;
 
         {
             let mut heartbeat = heartbeat.write();
@@ -194,7 +196,6 @@ impl ThreadService {
                 // New players
                 let new_players_task = tokio::task::spawn({
                     let sv_license_key_token = sv_license_key_token.clone();
-                    let heartbeat_service = heartbeat_service.clone();
                     let cloned_new_players = new_players.clone();
 
                     async move {
@@ -207,15 +208,15 @@ impl ThreadService {
                         stream::iter(new_players.values())
                             .for_each_concurrent(None, |player| {
                                 let sv_license_key_token = sv_license_key_token.clone();
-                                let heartbeat_service = heartbeat_service.clone();
                                 let cloned_new_players = cloned_new_players.clone();
 
                                 async move {
-                                    let result = heartbeat_service
-                                        .send_entitlement(
+                                    let result = fivem_service
+                                        .initialize_player(
                                             &player.machine_hash,
                                             &player.entitlement_id,
                                             &player.account_index,
+                                            &sv_license_key_token,
                                         )
                                         .await;
 
@@ -227,23 +228,6 @@ impl ThreadService {
 
                                         // Remove player from new_players if entitlement is invalid
                                         cloned_new_players.write().remove(&player.id);
-                                        return;
-                                    }
-
-                                    let result = heartbeat_service
-                                        .send_ticket(
-                                            &player.machine_hash,
-                                            &player.entitlement_id,
-                                            &player.account_index,
-                                            &sv_license_key_token,
-                                        )
-                                        .await;
-
-                                    if let Err(error) = result {
-                                        warn!(
-                                            "Error Sending First Ticket for Player {}: {:?}",
-                                            &player.id, error
-                                        );
                                     }
                                 }
                             })
@@ -253,8 +237,6 @@ impl ThreadService {
 
                 // Assigned players
                 let assigned_players_task = tokio::task::spawn({
-                    let sv_license_key_token = sv_license_key_token.clone();
-                    let heartbeat_service = heartbeat_service.clone();
                     let assigned_players = assigned_players.clone();
 
                     async move {
@@ -265,23 +247,17 @@ impl ThreadService {
                         }
 
                         stream::iter(assigned_players.values())
-                            .for_each_concurrent(None, |player| {
-                                let sv_license_key_token = sv_license_key_token.clone();
-                                let heartbeat_service = heartbeat_service.clone();
+                            .for_each_concurrent(None, |player| async move {
+                                let result = fivem_service
+                                    .heartbeat(
+                                        &player.machine_hash,
+                                        &player.entitlement_id,
+                                        &player.account_index,
+                                    )
+                                    .await;
 
-                                async move {
-                                    let result = heartbeat_service
-                                        .send_ticket(
-                                            &player.machine_hash,
-                                            &player.entitlement_id,
-                                            &player.account_index,
-                                            &sv_license_key_token,
-                                        )
-                                        .await;
-
-                                    if let Err(error) = result {
-                                        info!("Player {} ticket error: {:?}", &player.id, error);
-                                    }
+                                if let Err(error) = result {
+                                    info!("Player {} ticket error: {:?}", &player.id, error);
                                 }
                             })
                             .await

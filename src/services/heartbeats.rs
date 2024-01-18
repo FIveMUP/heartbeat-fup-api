@@ -10,11 +10,11 @@ const EID_URL: &str = "https://cnl-hb-live.fivem.net/api";
 const PROXY_URL: &str = "http://sp7j5w5bze:proxypassxd1234fivemup@eu.dc.smartproxy.com:20000";
 
 #[derive(Clone)]
-pub struct HeartbeatService {
+pub struct FivemService {
     client: Client,
 }
 
-impl HeartbeatService {
+impl FivemService {
     pub fn new() -> Self {
         let mut headers = HeaderMap::with_capacity(1);
 
@@ -24,17 +24,19 @@ impl HeartbeatService {
         );
 
         Self {
+            // Todo: check if one client is enough for all requests or if we need a pool of clients
             client: Client::builder()
                 .proxy(Proxy::all(PROXY_URL).unwrap())
                 .user_agent("CitizenFX/1 (with adhesive; rel. 7194)")
                 .default_headers(headers)
-                .timeout(Duration::from_secs(15))
+                .timeout(Duration::from_secs(10))
                 .build()
                 .unwrap(),
         }
     }
 
-    pub async fn send_entitlement(
+    #[inline(always)]
+    pub async fn heartbeat(
         &self,
         machine_hash: &str,
         entitlement_id: &str,
@@ -68,15 +70,15 @@ impl HeartbeatService {
         Ok(())
     }
 
-    pub async fn send_ticket(
+    #[inline(always)]
+    pub async fn insert_bot(
         &self,
         machine_hash: &str,
         entitlement_id: &str,
         account_index: &str,
         sv_license_key_token: &str,
     ) -> AppResult<()> {
-        let response = {
-            let ticket_heartbeat = format!(
+        let ticket_heartbeat = format!(
                 "gameName=gta5&guid=148618792012444134&machineHash=AQAL&machineHashIndex={}&server=http%3a%2f%51.91.102.108%3a30120%2f&serverKeyToken={}&token={}&i={}",
                 machine_hash,
                 urlencoding::encode(sv_license_key_token),
@@ -84,26 +86,45 @@ impl HeartbeatService {
                 account_index
             );
 
-            self.client
-                .post(format!("{FIVEM_URL}/ticket/create"))
-                .body(ticket_heartbeat)
-                .send()
-                .await
-                .map_err(|_| CfxApiError::TicketHeartbeatFailed)?
-        };
+        let resp = self
+            .client
+            .post(format!("{FIVEM_URL}/ticket/create"))
+            .body(ticket_heartbeat)
+            .send()
+            .await
+            .map_err(|_| CfxApiError::TicketHeartbeatFailed)?;
 
-        self.send_entitlement(machine_hash, entitlement_id, account_index)
-            .await?;
-
-        if !response.status().is_success() {
-            println!("Ticket heartbeat failed: {}", response.status());
+        if !resp.status().is_success() {
+            println!("Ticket heartbeat failed: {}", resp.status());
             Err(CfxApiError::StatusCodeNot200)?
         }
 
-        let response_json = response.json::<serde_json::Value>().await.unwrap();
+        let response_json = resp.json::<serde_json::Value>().await.unwrap();
         if response_json["ticket"].is_null() {
             Err(CfxApiError::TicketResponseNull)?;
         }
+
+        Ok(())
+    }
+
+    #[inline(always)]
+    pub async fn initialize_player(
+        &self,
+        machine_hash: &str,
+        entitlement_id: &str,
+        account_index: &str,
+        sv_license_key_token: &str,
+    ) -> AppResult<()> {
+        self.insert_bot(
+            machine_hash,
+            entitlement_id,
+            account_index,
+            sv_license_key_token,
+        )
+        .await?;
+
+        self.heartbeat(machine_hash, entitlement_id, account_index)
+            .await?;
 
         Ok(())
     }
