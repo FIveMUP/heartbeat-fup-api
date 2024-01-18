@@ -13,9 +13,13 @@ impl ServerRepository {
     }
 
     pub async fn find_by_license(&self, license: &str) -> AppResult<Option<Server>> {
+        // TODO: Change database schema to avoid checking for nulls
         let row = sqlx::query(
             r#"
-                SELECT * FROM servers WHERE cfxLicense = ?
+                SELECT * FROM servers
+                WHERE cfxLicense = ?
+                AND name IS NOT NULL
+                AND sv_license_key_token IS NOT NULL;
             "#,
         )
         .bind(license)
@@ -25,16 +29,12 @@ impl ServerRepository {
         if let Some(row) = row {
             let server = Server {
                 id: row.try_get::<String, _>("id")?.into(),
-                name: row
-                    .try_get::<Option<String>, _>("name")?
-                    .map(CompactString::from),
+                name: row.try_get::<String, _>("name")?.into(),
                 cfx_license: row.try_get::<String, _>("cfxLicense")?.into(),
                 cfx_code: row
                     .try_get::<Option<String>, _>("cfxCode")?
                     .map(CompactString::from),
-                sv_license_key_token: row
-                    .try_get::<Option<String>, _>("sv_licenseKeyToken")?
-                    .map(CompactString::from),
+                sv_license_key_token: row.try_get::<String, _>("sv_licenseKeyToken")?.into(),
             };
 
             return Ok(Some(server));
