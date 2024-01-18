@@ -190,6 +190,7 @@ impl ThreadService {
                     assigned_players.retain(|id, _player| db_players.contains_key(id));
                 }
 
+                // Todo: Check if new players is empty and skip all this task
                 // New players
                 let new_players_task = tokio::task::spawn({
                     let sv_license_key_token = sv_license_key_token.clone();
