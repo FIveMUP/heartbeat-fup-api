@@ -1,7 +1,7 @@
 use chrono::{DateTime, Local};
 use compact_str::CompactString;
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct StockAccount {
     pub id: CompactString,
     pub owner: CompactString,
