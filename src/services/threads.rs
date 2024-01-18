@@ -3,6 +3,7 @@ use crate::{
     error::{AppResult, ThreadError},
     repositories::StockAccountRepository,
     services::FivemService,
+    utils::lcm,
 };
 use ahash::{AHashMap, AHashSet};
 use chrono::Utc;
@@ -18,7 +19,11 @@ use tracing::{error, info, warn};
 
 const UPDATE_PLAYERS_TICK: u8 = 4; // 4 * 7 = 28 Seconds
 const UPDATE_EXPIRED_PLAYERS_TICK: u8 = 8; // 4 * 4 * 7 = 112 seconds (1.8 minutes)
-const UPDATE_MAX_TICK: u8 = UPDATE_PLAYERS_TICK * UPDATE_EXPIRED_PLAYERS_TICK; // If this number increase should use lcm instead of multiplication
+const SHRINK_HASHES_TICK: u8 = 16; // 4 * 4 * 4 * 7 = 448 seconds (7.5 minutes)
+const UPDATE_MAX_TICK: u8 = lcm(
+    UPDATE_PLAYERS_TICK,
+    lcm(UPDATE_EXPIRED_PLAYERS_TICK, SHRINK_HASHES_TICK),
+);
 
 const MIN_HEARTBEAT_TIME: Duration = Duration::from_secs(5);
 const THREAD_SLEEP_TIME: Duration = Duration::from_secs(7);
@@ -35,8 +40,8 @@ pub struct ThreadService {
 impl ThreadService {
     pub fn new(db: &Database, fivem_service: &'static FivemService) -> Self {
         Self {
-            threads: Arc::new(RwLock::new(AHashMap::with_capacity(100))),
-            heartbeat: Arc::new(RwLock::new(AHashMap::with_capacity(100))),
+            threads: Arc::new(RwLock::new(AHashMap::with_capacity(50))),
+            heartbeat: Arc::new(RwLock::new(AHashMap::with_capacity(50))),
             stock_repo: Arc::new(StockAccountRepository::new(db)),
             fivem_service,
         }
@@ -109,11 +114,14 @@ impl ThreadService {
 
         tokio::spawn(async move {
             info!("Spawned thread for {}", server_name);
+            let mut first_run = true;
             let mut update_counter = 0u8;
             let mut expired_ids = AHashSet::new();
             let sv_license_key_token: Arc<str> = Arc::from(sv_license_key_token.to_string());
-            let new_players = Arc::from(RwLock::new(AHashSet::with_capacity(20))); // Default capacity to avoid re-allocations
-            let assigned_players = Arc::from(RwLock::new(AHashMap::with_capacity(20))); // Default capacity to avoid re-allocations
+
+            let players_count = stock_repo.get_count(&server_id).await.unwrap_or(20);
+            let new_players = Arc::from(RwLock::new(AHashSet::with_capacity(players_count)));
+            let assigned_players = Arc::from(RwLock::new(AHashMap::with_capacity(players_count)));
 
             loop {
                 time::sleep(THREAD_SLEEP_TIME).await;
@@ -145,12 +153,11 @@ impl ThreadService {
                     };
 
                     let time = Utc::now();
+                    let update_expired = update_counter & UPDATE_EXPIRED_PLAYERS_TICK == 0;
                     let mut new_players = new_players.write();
                     let mut assigned_players = assigned_players.write();
-                    let should_update_expired_players =
-                        update_counter & UPDATE_EXPIRED_PLAYERS_TICK == 0;
 
-                    if should_update_expired_players && expired_ids.len() > 0 {
+                    if update_expired && expired_ids.len() > 0 {
                         expired_ids.drain();
                     }
 
@@ -159,7 +166,7 @@ impl ThreadService {
                             continue;
                         }
 
-                        if should_update_expired_players && time > player.expire_on {
+                        if update_expired && time > player.expire_on {
                             expired_ids.insert(id.to_owned());
 
                             match assigned_players.contains_key(id) {
@@ -194,7 +201,7 @@ impl ThreadService {
                         }
                     }
 
-                    if should_update_expired_players && expired_ids.len() == db_players.len() {
+                    if update_expired && expired_ids.len() == db_players.len() {
                         error!("Thread: {}, all players expired", server_name);
                         break;
                     }
@@ -283,6 +290,16 @@ impl ThreadService {
                     now.elapsed().as_millis(),
                     bots
                 );
+
+                if first_run {
+                    first_run = false;
+                    new_players.write().shrink_to_fit();
+                }
+
+                if !first_run && update_counter & SHRINK_HASHES_TICK == 0 {
+                    new_players.write().shrink_to_fit();
+                    assigned_players.write().shrink_to_fit();
+                }
 
                 update_counter = (update_counter + 1) % UPDATE_MAX_TICK;
             }
