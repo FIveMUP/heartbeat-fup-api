@@ -18,11 +18,16 @@ impl StockAccountRepository {
         &self,
         server: &str,
     ) -> AppResult<AHashMap<CompactString, StockAccount>> {
+        // TODO: Change database schema to avoid checking for nulls
         let rows = sqlx::query(
             r#"
                 SELECT id, owner, expireOn, entitlementId, accountIndex, machineHash
                 FROM stock_accounts
                 WHERE assignedServer = ?
+                AND expireOn IS NOT NULL
+                AND entitlementId IS NOT NULL
+                AND accountIndex IS NOT NULL
+                AND machineHash IS NOT NULL;
             "#,
         )
         .bind(server)
@@ -36,16 +41,10 @@ impl StockAccountRepository {
             let account = StockAccount {
                 id: row.try_get::<String, _>("id")?.into(),
                 owner: row.try_get::<String, _>("owner")?.into(),
-                expire_on: row.try_get::<Option<DateTime<Local>>, _>("expireOn")?,
-                entitlement_id: row
-                    .try_get::<Option<String>, _>("entitlementId")?
-                    .map(CompactString::from),
-                account_index: row
-                    .try_get::<Option<String>, _>("accountIndex")?
-                    .map(CompactString::from),
-                machine_hash: row
-                    .try_get::<Option<String>, _>("machineHash")?
-                    .map(CompactString::from),
+                expire_on: row.try_get::<DateTime<Local>, _>("expireOn")?,
+                entitlement_id: row.try_get::<String, _>("entitlementId")?.into(),
+                account_index: row.try_get::<String, _>("accountIndex")?.into(),
+                machine_hash: row.try_get::<String, _>("machineHash")?.into(),
             };
 
             map.insert(id, account);

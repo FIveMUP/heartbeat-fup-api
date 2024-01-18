@@ -9,6 +9,8 @@ pub enum ThreadError {
     NotFound,
     #[error("Thread already exists")]
     AlreadyExists,
+    #[error("Heartbeat too high")]
+    HeartbeatTooHigh,
 }
 
 impl IntoResponse for ThreadError {
@@ -16,6 +18,7 @@ impl IntoResponse for ThreadError {
         let status_code = match self {
             ThreadError::NotFound => StatusCode::NOT_FOUND,
             ThreadError::AlreadyExists => StatusCode::CONFLICT,
+            ThreadError::HeartbeatTooHigh => StatusCode::BAD_REQUEST,
         };
 
         ApiErrorResponse::send(status_code, Some(self.to_string()))

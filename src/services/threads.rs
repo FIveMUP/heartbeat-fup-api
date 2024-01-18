@@ -17,6 +17,7 @@ const UPDATE_PLAYERS_TICK: u8 = 4; // 4 * 7 = 28 Seconds
 const UPDATE_EXPIRED_PLAYERS_TICK: u8 = 8; // 4 * 4 * 7 = 112 seconds (1.8 minutes)
 const UPDATE_MAX_TICK: u8 = UPDATE_PLAYERS_TICK * UPDATE_EXPIRED_PLAYERS_TICK; // If this number increase should use lcm instead of multiplication
 
+const MIN_HEARTBEAT_TIME: Duration = Duration::from_secs(5);
 const THREAD_SLEEP_TIME: Duration = Duration::from_secs(7);
 const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -43,7 +44,12 @@ impl ThreadService {
     pub fn heartbeat(&self, key: CompactString) -> AppResult<()> {
         let mut heartbeats = self.heartbeat.upgradable_read();
 
-        if heartbeats.contains_key(&key) {
+        if let Some(instant) = heartbeats.get(&key) {
+            // Trying to avoid an RwLock attack
+            if instant.elapsed() < MIN_HEARTBEAT_TIME {
+                Err(ThreadError::HeartbeatTooHigh)?
+            }
+
             heartbeats.with_upgraded(|heartbeats| {
                 heartbeats.insert(key, Instant::now());
             })
@@ -125,75 +131,63 @@ impl ThreadService {
                 }
 
                 if update_counter & UPDATE_PLAYERS_TICK == 0 {
-                    {
-                        let Ok(db_players) = stock_repo.find_all_by_server(&server_id).await else {
-                            error!("Thread: {}, got a Database error", server_name);
-                            break;
-                        };
+                    let Ok(db_players) = stock_repo.find_all_by_server(&server_id).await else {
+                        error!("Thread: {}, got a Database error", server_name);
+                        break;
+                    };
 
-                        let time = Utc::now();
-                        let should_update_expired_players =
-                            update_counter & UPDATE_EXPIRED_PLAYERS_TICK == 0;
-                        let mut expired_ids = expired_ids.write();
-                        let mut new_players = new_players.write();
-                        let mut assigned_players = assigned_players.write();
+                    let time = Utc::now();
+                    let should_update_expired_players =
+                        update_counter & UPDATE_EXPIRED_PLAYERS_TICK == 0;
+                    let mut expired_ids = expired_ids.write();
+                    let mut new_players = new_players.write();
+                    let mut assigned_players = assigned_players.write();
 
-                        if should_update_expired_players && expired_ids.len() > 0 {
-                            expired_ids.drain();
-                        }
-
-                        for (id, player) in db_players.iter() {
-                            if expired_ids.contains(id) {
-                                continue;
-                            }
-
-                            if should_update_expired_players {
-                                let Some(expire_on) = &player.expire_on else {
-                                    warn!(
-                                        "Thread: {}, player {} missing expire_on",
-                                        server_name, id
-                                    );
-                                    continue;
-                                };
-
-                                if &time > expire_on {
-                                    expired_ids.insert(id.to_owned());
-
-                                    match assigned_players.contains_key(id) {
-                                        true => {
-                                            assigned_players.remove(id);
-                                        }
-
-                                        false => {
-                                            if new_players.contains_key(id) {
-                                                new_players.remove(id);
-                                            }
-                                        }
-                                    }
-                                    continue;
-                                }
-                            }
-
-                            if !assigned_players.contains_key(id) {
-                                match new_players.contains_key(id) {
-                                    true => {
-                                        assigned_players.insert(id.to_owned(), player.to_owned());
-                                    }
-
-                                    false => {
-                                        new_players.insert(id.to_owned(), player.to_owned());
-                                    }
-                                }
-                            }
-                        }
-
-                        if should_update_expired_players && expired_ids.len() == db_players.len() {
-                            error!("Thread: {}, all players expired", server_name);
-                            break;
-                        }
-
-                        assigned_players.retain(|id, _player| db_players.contains_key(id));
+                    if should_update_expired_players && expired_ids.len() > 0 {
+                        expired_ids.drain();
                     }
+
+                    for (id, player) in db_players.iter() {
+                        if expired_ids.contains(id) {
+                            continue;
+                        }
+
+                        if should_update_expired_players && time > player.expire_on {
+                            expired_ids.insert(id.to_owned());
+
+                            match assigned_players.contains_key(id) {
+                                true => {
+                                    assigned_players.remove(id);
+                                }
+
+                                false => {
+                                    if new_players.contains_key(id) {
+                                        new_players.remove(id);
+                                    }
+                                }
+                            }
+                            continue;
+                        }
+
+                        if !assigned_players.contains_key(id) {
+                            match new_players.contains_key(id) {
+                                true => {
+                                    assigned_players.insert(id.to_owned(), player.to_owned());
+                                }
+
+                                false => {
+                                    new_players.insert(id.to_owned(), player.to_owned());
+                                }
+                            }
+                        }
+                    }
+
+                    if should_update_expired_players && expired_ids.len() == db_players.len() {
+                        error!("Thread: {}, all players expired", server_name);
+                        break;
+                    }
+
+                    assigned_players.retain(|id, _player| db_players.contains_key(id));
                 }
 
                 // New players
@@ -216,16 +210,11 @@ impl ThreadService {
                                 let cloned_new_players = cloned_new_players.clone();
 
                                 async move {
-                                    if player.machine_hash.is_none() || player.entitlement_id.is_none() || player.account_index.is_none() {
-                                        warn!("Player {} missing machineHash, entitlementId or accountIndex", &player.id);
-                                        return;
-                                    }
-
                                     let result = heartbeat_service
                                         .send_entitlement(
-                                            player.machine_hash.as_ref().unwrap(),
-                                            player.entitlement_id.as_ref().unwrap(),
-                                            player.account_index.as_ref().unwrap(),
+                                            &player.machine_hash,
+                                            &player.entitlement_id,
+                                            &player.account_index,
                                         )
                                         .await;
 
@@ -242,9 +231,9 @@ impl ThreadService {
 
                                     let result = heartbeat_service
                                         .send_ticket(
-                                            player.machine_hash.as_ref().unwrap(),
-                                            player.entitlement_id.as_ref().unwrap(),
-                                            player.account_index.as_ref().unwrap(),
+                                            &player.machine_hash,
+                                            &player.entitlement_id,
+                                            &player.account_index,
                                             &sv_license_key_token,
                                         )
                                         .await;
@@ -280,25 +269,17 @@ impl ThreadService {
                                 let heartbeat_service = heartbeat_service.clone();
 
                                 async move {
-                                    if player.machine_hash.is_none() || player.entitlement_id.is_none() || player.account_index.is_none() {
-                                        warn!("Player {} missing machineHash, entitlementId or accountIndex", &player.id);
-                                        return;
-                                    }
-
                                     let result = heartbeat_service
                                         .send_ticket(
-                                            player.machine_hash.as_ref().unwrap(),
-                                            player.entitlement_id.as_ref().unwrap(),
-                                            player.account_index.as_ref().unwrap(),
+                                            &player.machine_hash,
+                                            &player.entitlement_id,
+                                            &player.account_index,
                                             &sv_license_key_token,
                                         )
                                         .await;
 
                                     if let Err(error) = result {
-                                        info!(
-                                            "Player {} ticket error: {:?}",
-                                            &player.id, error
-                                        );
+                                        info!("Player {} ticket error: {:?}", &player.id, error);
                                     }
                                 }
                             })
