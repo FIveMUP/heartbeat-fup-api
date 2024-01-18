@@ -10,7 +10,10 @@ use compact_str::CompactString;
 use futures::{stream, StreamExt};
 use parking_lot::RwLock;
 use std::{sync::Arc, time::Duration};
-use tokio::{task::JoinHandle, time::Instant};
+use tokio::{
+    task::JoinHandle,
+    time::{self, Instant},
+};
 use tracing::{error, info, warn};
 
 const UPDATE_PLAYERS_TICK: u8 = 4; // 4 * 7 = 28 Seconds
@@ -76,7 +79,7 @@ impl ThreadService {
 
             info!("Thread {:?}", handle);
             let mut threads = self.threads.write();
-            threads.insert(key.to_owned(), Arc::new(handle));
+            threads.insert(key, Arc::new(handle));
 
             Ok(())
         } else {
@@ -92,10 +95,10 @@ impl ThreadService {
         sv_license_key_token: CompactString,
         server_name: CompactString,
     ) -> JoinHandle<()> {
+        let fivem_service = self.fivem_service;
         let stock_repo = self.stock_repo.clone();
         let threads = self.threads.clone();
         let heartbeat = self.heartbeat.clone();
-        let fivem_service = self.fivem_service;
 
         {
             let mut heartbeat = heartbeat.write();
@@ -107,15 +110,16 @@ impl ThreadService {
         tokio::spawn(async move {
             info!("Spawned thread for {}", server_name);
             let mut update_counter = 0u8;
+            let mut expired_ids = AHashSet::new();
             let sv_license_key_token: Arc<str> = Arc::from(sv_license_key_token.to_string());
-            let expired_ids = Arc::from(RwLock::new(AHashSet::new()));
-            let new_players = Arc::from(RwLock::new(AHashMap::new()));
-            let assigned_players = Arc::from(RwLock::new(AHashMap::new()));
+            let new_players = Arc::from(RwLock::new(AHashSet::with_capacity(20))); // Default capacity to avoid re-allocations
+            let assigned_players = Arc::from(RwLock::new(AHashMap::with_capacity(20))); // Default capacity to avoid re-allocations
 
             loop {
-                tokio::time::sleep(THREAD_SLEEP_TIME).await;
+                time::sleep(THREAD_SLEEP_TIME).await;
                 let now = Instant::now();
 
+                // Check Heartbeat Timeout
                 {
                     let mut heartbeats = heartbeat.upgradable_read();
                     let last_heartbeat = heartbeats.get(&key).unwrap();
@@ -132,6 +136,8 @@ impl ThreadService {
                     }
                 }
 
+                let mut new_players_vec = Vec::new();
+
                 if update_counter & UPDATE_PLAYERS_TICK == 0 {
                     let Ok(db_players) = stock_repo.find_all_by_server(&server_id).await else {
                         error!("Thread: {}, got a Database error", server_name);
@@ -139,11 +145,10 @@ impl ThreadService {
                     };
 
                     let time = Utc::now();
-                    let should_update_expired_players =
-                        update_counter & UPDATE_EXPIRED_PLAYERS_TICK == 0;
-                    let mut expired_ids = expired_ids.write();
                     let mut new_players = new_players.write();
                     let mut assigned_players = assigned_players.write();
+                    let should_update_expired_players =
+                        update_counter & UPDATE_EXPIRED_PLAYERS_TICK == 0;
 
                     if should_update_expired_players && expired_ids.len() > 0 {
                         expired_ids.drain();
@@ -163,7 +168,7 @@ impl ThreadService {
                                 }
 
                                 false => {
-                                    if new_players.contains_key(id) {
+                                    if new_players.contains(id) {
                                         new_players.remove(id);
                                     }
                                 }
@@ -172,13 +177,18 @@ impl ThreadService {
                         }
 
                         if !assigned_players.contains_key(id) {
-                            match new_players.contains_key(id) {
+                            let id = id.to_owned();
+                            let player = player.to_owned();
+
+                            match new_players.contains(&id) {
                                 true => {
-                                    assigned_players.insert(id.to_owned(), player.to_owned());
+                                    new_players.remove(&id);
+                                    assigned_players.insert(id, player);
                                 }
 
                                 false => {
-                                    new_players.insert(id.to_owned(), player.to_owned());
+                                    new_players_vec.push(player);
+                                    new_players.insert(id);
                                 }
                             }
                         }
@@ -199,13 +209,11 @@ impl ThreadService {
                     let cloned_new_players = new_players.clone();
 
                     async move {
-                        let new_players = cloned_new_players.read_arc();
-
-                        if new_players.is_empty() {
+                        if new_players_vec.is_empty() {
                             return;
                         }
 
-                        stream::iter(new_players.values())
+                        stream::iter(new_players_vec.iter())
                             .for_each_concurrent(None, |player| {
                                 let sv_license_key_token = sv_license_key_token.clone();
                                 let cloned_new_players = cloned_new_players.clone();
@@ -276,7 +284,6 @@ impl ThreadService {
                     bots
                 );
 
-                new_players.write().clear();
                 update_counter = (update_counter + 1) % UPDATE_MAX_TICK;
             }
         })
