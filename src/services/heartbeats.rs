@@ -5,8 +5,8 @@ use reqwest::{
 };
 use std::time::Duration;
 
-const FIVEM_URL: &str = "https://lambda.fivem.net/api";
-const EID_URL: &str = "https://cnl-hb-live.fivem.net/api";
+const TICKET_CREATION_URL: &str = "https://lambda.fivem.net/api/ticket/create";
+const HEARBEAT_URL: &str = "https://cnl-hb-live.fivem.net/api/validate/entitlement";
 const PROXY_URL: &str = "http://sp7j5w5bze:proxypassxd1234fivemup@eu.dc.smartproxy.com:20000";
 
 #[derive(Clone)]
@@ -43,15 +43,18 @@ impl FivemService {
         account_index: &str,
     ) -> AppResult<()> {
         let response = {
-            let entitlement_heartbeat = format!(
-                "entitlementId={}&f=%7b%7d&gameName=gta5&h2=YyMyxwNpROOEdyxjBu%2bNls1LHzPzx1zTEX7RtDmwD5Eb2MPVgeWNFbNZC3YfGgUnbriTU2jsl7jO0SQ9%2bmDqmU1rLf075r4bxMuKLjcUu2IPy3zVXd2ni2xVJJw8%2bFOoWqaTKIQGggBYEBEBRNOsFNjp6TLqbCwKiqMmc7rl8pLj6SCUm1MpNcBg%2fIE15VmMk4erFf26PdrA4GpAKAP%2fdsM9QaY1GbBnwM4V4xWl8EtLWFPF0XW9xePpm5ZPOjU3OfMAZ2eTF6cNkNsxAGHIMB4VTaKLGWoWmRToEEzbh9wTebY97mYeFdtqF8L%2bnNPVv6y0k4szAwdbInJ2oE73iFj5mZIKLGxqKtNGg9r10nJm2Bk1bTchSWTKlsI%2ffN1vvG6g1fxNDf5%2bJyqGnhktaEMt7L8JTxpgHPuAKtAN795kAM%2fZRgHUUqJzxnH4Ps3jSaMAt5eDpzfdkGvhADFIMMfSEEZ6WqQyvwRw85arnc6IgNYKFlqzGnpsHcWE13elDaRPbgNfMwT7U4Jk31vcfSsadYeqN6Ngad6CeF9zty7GWMklfWcRuaRqtiJvPI3%2fhGymZwPdFHsWvsBEFcbKTWVukjVzaXbuuOH81iY%2fCw7Mbq9A%2f%2fERGFNFW5HXUd9WCZsUooXHJcjVuczxO0BgQLfyEGaaemQSr0RwA3abTe7l5nY4wMC%2fJKkB1AKURTTsJcHhbK0Xrz14b5XOZIZDNlUGQpXweFTMWeualdOAxGUvDnnD0%2fqIZ39zjnPdulZUxCzGt%2fPt1Mt2nsAEJaYq%2fSLBqoahs9UtgGs%2fX9PAqqsnJdsRJ%2bZXKA%2fGfeBr58TCQsDJ8B1CCkqqsmAjItskmOY6w2%2fNGhQw7enImzXwvO4%3d&i={}&machineHash=AQAL&machineHashIndex={}&rosId=1234",
+            let entitlement_heartbeat = [
+                "entitlementId=",
                 entitlement_id,
+                "&f=%7b%7d&gameName=gta5&h2=YyMyxwNpROOEdyxjBu%2bNls1LHzPzx1zTEX7RtDmwD5Eb2MPVgeWNFbNZC3YfGgUnbriTU2jsl7jO0SQ9%2bmDqmU1rLf075r4bxMuKLjcUu2IPy3zVXd2ni2xVJJw8%2bFOoWqaTKIQGggBYEBEBRNOsFNjp6TLqbCwKiqMmc7rl8pLj6SCUm1MpNcBg%2fIE15VmMk4erFf26PdrA4GpAKAP%2fdsM9QaY1GbBnwM4V4xWl8EtLWFPF0XW9xePpm5ZPOjU3OfMAZ2eTF6cNkNsxAGHIMB4VTaKLGWoWmRToEEzbh9wTebY97mYeFdtqF8L%2bnNPVv6y0k4szAwdbInJ2oE73iFj5mZIKLGxqKtNGg9r10nJm2Bk1bTchSWTKlsI%2ffN1vvG6g1fxNDf5%2bJyqGnhktaEMt7L8JTxpgHPuAKtAN795kAM%2fZRgHUUqJzxnH4Ps3jSaMAt5eDpzfdkGvhADFIMMfSEEZ6WqQyvwRw85arnc6IgNYKFlqzGnpsHcWE13elDaRPbgNfMwT7U4Jk31vcfSsadYeqN6Ngad6CeF9zty7GWMklfWcRuaRqtiJvPI3%2fhGymZwPdFHsWvsBEFcbKTWVukjVzaXbuuOH81iY%2fCw7Mbq9A%2f%2fERGFNFW5HXUd9WCZsUooXHJcjVuczxO0BgQLfyEGaaemQSr0RwA3abTe7l5nY4wMC%2fJKkB1AKURTTsJcHhbK0Xrz14b5XOZIZDNlUGQpXweFTMWeualdOAxGUvDnnD0%2fqIZ39zjnPdulZUxCzGt%2fPt1Mt2nsAEJaYq%2fSLBqoahs9UtgGs%2fX9PAqqsnJdsRJ%2bZXKA%2fGfeBr58TCQsDJ8B1CCkqqsmAjItskmOY6w2%2fNGhQw7enImzXwvO4%3d&i=",
                 account_index,
-                machine_hash
-            );
+                "&machineHash=AQAL&machineHashIndex=",
+                machine_hash,
+                "&rosId=1234"
+            ].concat();
 
             self.client
-                .post(format!("{EID_URL}/validate/entitlement"))
+                .post(HEARBEAT_URL)
                 .body(entitlement_heartbeat)
                 .send()
                 .await
@@ -78,17 +81,21 @@ impl FivemService {
         account_index: &str,
         sv_license_key_token: &str,
     ) -> AppResult<()> {
-        let ticket_heartbeat = format!(
-                "gameName=gta5&guid=148618792012444134&machineHash=AQAL&machineHashIndex={}&server=http%3a%2f%51.91.102.108%3a30120%2f&serverKeyToken={}&token={}&i={}",
-                machine_hash,
-                urlencoding::encode(sv_license_key_token),
-                entitlement_id,
-                account_index
-            );
+        let ticket_heartbeat = [
+            "gameName=gta5&guid=148618792012444134&machineHash=AQAL&machineHashIndex=",
+            machine_hash,
+            "&server=http%3a%2f%51.91.102.108%3a30120%2f&serverKeyToken=",
+            sv_license_key_token,
+            "&token=",
+            entitlement_id,
+            "&i=",
+            account_index,
+        ]
+        .concat();
 
         let resp = self
             .client
-            .post(format!("{FIVEM_URL}/ticket/create"))
+            .post(TICKET_CREATION_URL)
             .body(ticket_heartbeat)
             .send()
             .await

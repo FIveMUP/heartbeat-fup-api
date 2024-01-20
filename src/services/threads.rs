@@ -33,7 +33,7 @@ const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(30);
 pub struct ThreadService {
     stock_repo: Arc<StockAccountRepository>,
     heartbeat: Arc<RwLock<AHashMap<CompactString, Instant>>>,
-    threads: Arc<RwLock<AHashMap<CompactString, Arc<JoinHandle<()>>>>>,
+    threads: Arc<RwLock<AHashMap<CompactString, JoinHandle<()>>>>,
     fivem_service: &'static FivemService,
 }
 
@@ -84,7 +84,7 @@ impl ThreadService {
 
             info!("Thread {:?}", handle);
             let mut threads = self.threads.write();
-            threads.insert(key, Arc::new(handle));
+            threads.insert(key, handle);
 
             Ok(())
         } else {
@@ -117,7 +117,8 @@ impl ThreadService {
             let mut first_run = true;
             let mut update_counter = 0u8;
             let mut expired_ids = AHashSet::new();
-            let sv_license_key_token: Arc<str> = Arc::from(sv_license_key_token.to_string());
+            let sv_license_key_token: Arc<str> =
+                Arc::from(urlencoding::encode(&sv_license_key_token));
 
             let players_count = stock_repo.get_count(&server_id).await.unwrap_or(20);
             let new_players = Arc::from(RwLock::new(AHashSet::with_capacity(players_count)));
