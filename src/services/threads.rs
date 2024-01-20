@@ -19,7 +19,7 @@ use tracing::{error, info, warn};
 
 const UPDATE_PLAYERS_TICK: u8 = 4; // 4 * 7 = 28 Seconds
 const UPDATE_EXPIRED_PLAYERS_TICK: u8 = 8; // 4 * 4 * 7 = 112 seconds (1.8 minutes)
-const SHRINK_HASHES_TICK: u8 = 16; // 4 * 4 * 4 * 7 = 448 seconds (7.5 minutes)
+const SHRINK_HASHES_TICK: u8 = 64; // 64 * 7 = 448 seconds (7.5 minutes)
 const UPDATE_MAX_TICK: u8 = lcm(
     UPDATE_PLAYERS_TICK,
     lcm(UPDATE_EXPIRED_PLAYERS_TICK, SHRINK_HASHES_TICK),
