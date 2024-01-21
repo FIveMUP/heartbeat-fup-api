@@ -19,7 +19,7 @@ impl ServerRepository {
                 SELECT * FROM servers
                 WHERE cfxLicense = ?
                 AND name IS NOT NULL
-                AND sv_license_key_token IS NOT NULL;
+                AND svLicenseKeyToken IS NOT NULL;
             "#,
         )
         .bind(license)
