@@ -1,6 +1,6 @@
 [package]
 name = "heartbeat_api"
-version = "1.6.0"
+version = "1.7.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -11,7 +11,6 @@ tracing = "0.1"
 thiserror = "1"
 futures = "0.3"
 dotenvy = "0.15"
-mimalloc = "0.1"
 serde_json = "1"
 urlencoding = "2"
 tokio = { version = "1", features = ["full"] }
@@ -19,6 +18,7 @@ hyper = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 reqwest = { version = "0.11", features = ["json"] }
 compact_str = { version = "0.7", features = ["serde"] }
+mimalloc-rust = { version = "0.2", features = ["asm"] }
 axum = { version = "0.7", features = ["macros", "multipart"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tower = { version = "0.4", features = ["tokio", "timeout", "load-shed"] }

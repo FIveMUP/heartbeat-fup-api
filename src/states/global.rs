@@ -1,7 +1,7 @@
 use crate::{
     config::Database,
     repositories::{ServerRepository, StockAccountRepository},
-    services::{FivemService, ThreadService},
+    services::ThreadService,
 };
 
 #[derive(Clone)]
@@ -12,11 +12,11 @@ pub struct GlobalState {
 }
 
 impl GlobalState {
-    pub fn new(database: Database, fivem_service: &'static FivemService) -> Self {
+    pub fn new(database: Database) -> Self {
         Self {
             stock_account_repository: StockAccountRepository::new(&database),
             server_repository: ServerRepository::new(&database),
-            threads_service: ThreadService::new(&database, fivem_service),
+            threads_service: ThreadService::new(&database),
         }
     }
 }

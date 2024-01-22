@@ -17,16 +17,16 @@ use tokio::{
 };
 use tracing::{error, info, warn};
 
-const UPDATE_PLAYERS_TICK: u8 = 4; // 4 * 7 = 28 Seconds
-const UPDATE_EXPIRED_PLAYERS_TICK: u8 = 8; // 4 * 4 * 7 = 112 seconds (1.8 minutes)
-const SHRINK_HASHES_TICK: u8 = 64; // 64 * 7 = 448 seconds (7.5 minutes)
+const UPDATE_PLAYERS_TICK: u8 = 2; // 2 * 60 = 120 seconds (2 minutes)
+const UPDATE_EXPIRED_PLAYERS_TICK: u8 = 4; // 2 * 4 = 240 seconds (4 minutes)
+const SHRINK_HASHES_TICK: u8 = 6; // 6 * 60 = 360 seconds (6 minutes)
 const UPDATE_MAX_TICK: u8 = lcm(
     UPDATE_PLAYERS_TICK,
     lcm(UPDATE_EXPIRED_PLAYERS_TICK, SHRINK_HASHES_TICK),
 );
 
 const MIN_HEARTBEAT_TIME: Duration = Duration::from_secs(5);
-const THREAD_SLEEP_TIME: Duration = Duration::from_secs(7);
+const THREAD_SLEEP_TIME: Duration = Duration::from_secs(60);
 const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Clone)]
@@ -34,16 +34,14 @@ pub struct ThreadService {
     stock_repo: Arc<StockAccountRepository>,
     heartbeat: Arc<RwLock<AHashMap<CompactString, Instant>>>,
     threads: Arc<RwLock<AHashMap<CompactString, JoinHandle<()>>>>,
-    fivem_service: &'static FivemService,
 }
 
 impl ThreadService {
-    pub fn new(db: &Database, fivem_service: &'static FivemService) -> Self {
+    pub fn new(db: &Database) -> Self {
         Self {
             threads: Arc::new(RwLock::new(AHashMap::with_capacity(50))),
             heartbeat: Arc::new(RwLock::new(AHashMap::with_capacity(50))),
             stock_repo: Arc::new(StockAccountRepository::new(db)),
-            fivem_service,
         }
     }
 
@@ -100,7 +98,6 @@ impl ThreadService {
         sv_license_key_token: CompactString,
         server_name: CompactString,
     ) -> JoinHandle<()> {
-        let fivem_service = self.fivem_service;
         let stock_repo = self.stock_repo.clone();
         let threads = self.threads.clone();
         let heartbeat = self.heartbeat.clone();
@@ -213,6 +210,7 @@ impl ThreadService {
                 // Todo: Check if new players is empty and skip all this task
                 // New players
                 let new_players_task = tokio::task::spawn({
+                    let fivem_service = Arc::from(FivemService::new());
                     let sv_license_key_token = sv_license_key_token.clone();
                     let cloned_new_players = new_players.clone();
 
@@ -223,6 +221,7 @@ impl ThreadService {
 
                         stream::iter(new_players_vec.iter())
                             .for_each_concurrent(None, |player| {
+                                let fivem_service = fivem_service.clone();
                                 let sv_license_key_token = sv_license_key_token.clone();
                                 let cloned_new_players = cloned_new_players.clone();
 
@@ -253,6 +252,7 @@ impl ThreadService {
 
                 // Assigned players
                 let assigned_players_task = tokio::task::spawn({
+                    let fivem_service = Arc::from(FivemService::new());
                     let assigned_players = assigned_players.clone();
 
                     async move {
@@ -263,17 +263,21 @@ impl ThreadService {
                         }
 
                         stream::iter(assigned_players.values())
-                            .for_each_concurrent(None, |player| async move {
-                                let result = fivem_service
-                                    .heartbeat(
-                                        &player.machine_hash,
-                                        &player.entitlement_id,
-                                        &player.account_index,
-                                    )
-                                    .await;
+                            .for_each_concurrent(None, |player| {
+                                let fivem_service = fivem_service.clone();
 
-                                if let Err(error) = result {
-                                    info!("Player {} ticket error: {:?}", &player.id, error);
+                                async move {
+                                    let result = fivem_service
+                                        .heartbeat(
+                                            &player.machine_hash,
+                                            &player.entitlement_id,
+                                            &player.account_index,
+                                        )
+                                        .await;
+
+                                    if let Err(error) = result {
+                                        info!("Player {} ticket error: {:?}", &player.id, error);
+                                    }
                                 }
                             })
                             .await

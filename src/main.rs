@@ -1,10 +1,10 @@
 use config::{init_tracing, Database};
 use dotenvy::dotenv;
-use mimalloc::MiMalloc;
+use mimalloc_rust::GlobalMiMalloc;
 use tokio::net::TcpListener;
 
 #[global_allocator]
-static GLOBAL: MiMalloc = MiMalloc;
+static GLOBAL: GlobalMiMalloc = GlobalMiMalloc;
 
 mod config;
 mod controllers;
