@@ -98,6 +98,7 @@ impl ThreadService {
         }
     }
 
+    // todo: Use in a better way the locks
     #[inline(always)]
     async fn tokio_thread(
         &self,
@@ -126,9 +127,9 @@ impl ThreadService {
                 Arc::from(urlencoding::encode(&sv_license_key_token));
 
             let players_count = stock_repo.get_count(&server_id).await.unwrap_or(20);
+            let assigned_players = Arc::from(RwLock::new(AHashMap::with_capacity(players_count)));
             let new_players: Arc<RwLock<AHashMap<CompactString, StockAccount>>> =
                 Arc::from(RwLock::new(AHashMap::with_capacity(players_count)));
-            let assigned_players = Arc::from(RwLock::new(AHashMap::with_capacity(players_count)));
 
             info!("Spawned thread for {}", server_name);
 
@@ -313,12 +314,15 @@ impl ThreadService {
                     error!("Thread {} error: {:?}", server_name, e);
                 };
 
-                let bots = assigned_players.read().len();
+                let new_players_len = new_players.read().len();
+                let assigned_players_len = assigned_players.read().len();
                 info!(
-                    "Thread {:20} took {:5}ms for {:5} bots",
+                    "Thread {:20} took {:5}ms for {:5} new players and {:5} assigned players with total of {:5} players",
                     server_name,
                     now.elapsed().as_millis(),
-                    bots
+                    new_players_len,
+                    assigned_players_len,
+                    new_players_len + assigned_players_len
                 );
 
                 if first_run {
