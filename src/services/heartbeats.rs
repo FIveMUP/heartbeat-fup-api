@@ -1,38 +1,23 @@
-use crate::error::{AppResult, CfxApiError};
-use reqwest::{
-    header::{HeaderMap, HeaderValue, CONTENT_TYPE},
-    Client, Proxy,
+use crate::{
+    error::{AppResult, CfxApiError},
+    structs::reqwest_manager::ClientManager,
 };
-use std::time::Duration;
+use deadpool::managed::Pool;
 
 const TICKET_CREATION_URL: &str = "https://lambda.fivem.net/api/ticket/create";
-const HEARBEAT_URL: &str = "https://cnl-hb-live.fivem.net/api/validate/entitlement";
-const PROXY_URL: &str = "http://sp7j5w5bze:proxypassxd1234fivemup@eu.dc.smartproxy.com:20000";
+const HEARTBEAT_URL: &str = "https://cnl-hb-live.fivem.net/api/validate/entitlement";
 
 #[derive(Clone)]
 pub struct FivemService {
-    client: Client,
+    clients: Pool<ClientManager>,
 }
 
 impl FivemService {
     pub fn new() -> Self {
-        let mut headers = HeaderMap::with_capacity(1);
+        let mgr = ClientManager;
+        let pool = Pool::builder(mgr).build().unwrap();
 
-        headers.insert(
-            CONTENT_TYPE,
-            HeaderValue::from_static("application/x-www-form-urlencoded"),
-        );
-
-        Self {
-            // Todo: check if one client is enough for all requests or if we need a pool of clients
-            client: Client::builder()
-                .proxy(Proxy::all(PROXY_URL).unwrap())
-                .user_agent("CitizenFX/1 (with adhesive; rel. 7194)")
-                .default_headers(headers)
-                .timeout(Duration::from_secs(10))
-                .build()
-                .unwrap(),
-        }
+        Self { clients: pool }
     }
 
     #[inline(always)]
@@ -53,8 +38,10 @@ impl FivemService {
                 "&rosId=1234"
             ].concat();
 
-            self.client
-                .post(HEARBEAT_URL)
+            let client = self.clients.get().await.unwrap();
+
+            client
+                .post(HEARTBEAT_URL)
                 .body(entitlement_heartbeat)
                 .send()
                 .await
@@ -93,8 +80,9 @@ impl FivemService {
         ]
         .concat();
 
-        let resp = self
-            .client
+        let client = self.clients.get().await.unwrap();
+
+        let resp = client
             .post(TICKET_CREATION_URL)
             .body(ticket_heartbeat)
             .send()

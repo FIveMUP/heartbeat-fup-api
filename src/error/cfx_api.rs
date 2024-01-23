@@ -1,6 +1,8 @@
 use crate::response::ApiErrorResponse;
-use axum::response::{IntoResponse, Response};
-use hyper::StatusCode;
+use axum::{
+    http::StatusCode,
+    response::{IntoResponse, Response},
+};
 use thiserror::Error;
 
 #[derive(Error, Debug)]

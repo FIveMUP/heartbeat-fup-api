@@ -1,9 +1,13 @@
-use crate::error::{AppResult, ServerError};
-use crate::states::GlobalState;
-use axum::extract::{Path, State};
-use axum::response::{IntoResponse, Response};
+use crate::{
+    error::{AppResult, ServerError},
+    states::GlobalState,
+};
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    response::{IntoResponse, Response},
+};
 use compact_str::CompactString;
-use hyper::StatusCode;
 
 #[inline(always)]
 pub(crate) async fn heartbeat(

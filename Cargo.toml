@@ -1,10 +1,11 @@
 [package]
 name = "heartbeat_api"
-version = "1.7.0"
+version = "1.7.1"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
+axum = "0.7"
 ahash = "0.8"
 chrono = "0.4"
 tracing = "0.1"
@@ -12,14 +13,13 @@ thiserror = "1"
 futures = "0.3"
 dotenvy = "0.15"
 serde_json = "1"
+mimalloc = "0.1"
 urlencoding = "2"
 tokio = { version = "1", features = ["full"] }
-hyper = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 reqwest = { version = "0.11", features = ["json"] }
 compact_str = { version = "0.7", features = ["serde"] }
-mimalloc-rust = { version = "0.2", features = ["asm"] }
-axum = { version = "0.7", features = ["macros", "multipart"] }
+deadpool = { version = "0.10.0", features = ["rt_tokio_1"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tower = { version = "0.4", features = ["tokio", "timeout", "load-shed"] }
 sqlx = { version = "0.7", features = ["mysql", "runtime-tokio", "chrono"] }

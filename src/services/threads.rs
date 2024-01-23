@@ -31,17 +31,24 @@ const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Clone)]
 pub struct ThreadService {
-    stock_repo: Arc<StockAccountRepository>,
-    heartbeat: Arc<RwLock<AHashMap<CompactString, Instant>>>,
-    threads: Arc<RwLock<AHashMap<CompactString, JoinHandle<()>>>>,
+    fivem_service: &'static FivemService,
+    stock_repo: &'static StockAccountRepository,
+    heartbeat: &'static RwLock<AHashMap<CompactString, Instant>>,
+    threads: &'static RwLock<AHashMap<CompactString, JoinHandle<()>>>,
 }
 
 impl ThreadService {
     pub fn new(db: &Database) -> Self {
+        let fivem_service: &FivemService = Box::leak(Box::new(FivemService::new()));
+        let stock_repo = Box::leak(Box::new(StockAccountRepository::new(db)));
+        let threads = Box::leak(Box::new(RwLock::new(AHashMap::with_capacity(50))));
+        let heartbeat = Box::leak(Box::new(RwLock::new(AHashMap::with_capacity(50))));
+
         Self {
-            threads: Arc::new(RwLock::new(AHashMap::with_capacity(50))),
-            heartbeat: Arc::new(RwLock::new(AHashMap::with_capacity(50))),
-            stock_repo: Arc::new(StockAccountRepository::new(db)),
+            threads,
+            fivem_service,
+            heartbeat,
+            stock_repo,
         }
     }
 
@@ -98,9 +105,10 @@ impl ThreadService {
         sv_license_key_token: CompactString,
         server_name: CompactString,
     ) -> JoinHandle<()> {
-        let stock_repo = self.stock_repo.clone();
-        let threads = self.threads.clone();
-        let heartbeat = self.heartbeat.clone();
+        let fivem_service = self.fivem_service;
+        let stock_repo = self.stock_repo;
+        let threads = self.threads;
+        let heartbeat = self.heartbeat;
 
         {
             let mut heartbeat = heartbeat.write();
@@ -210,7 +218,6 @@ impl ThreadService {
                 // Todo: Check if new players is empty and skip all this task
                 // New players
                 let new_players_task = tokio::task::spawn({
-                    let fivem_service = Arc::from(FivemService::new());
                     let sv_license_key_token = sv_license_key_token.clone();
                     let cloned_new_players = new_players.clone();
 
@@ -221,7 +228,6 @@ impl ThreadService {
 
                         stream::iter(new_players_vec.iter())
                             .for_each_concurrent(None, |player| {
-                                let fivem_service = fivem_service.clone();
                                 let sv_license_key_token = sv_license_key_token.clone();
                                 let cloned_new_players = cloned_new_players.clone();
 
@@ -252,32 +258,27 @@ impl ThreadService {
 
                 // Assigned players
                 let assigned_players_task = tokio::task::spawn({
-                    let fivem_service = Arc::from(FivemService::new());
                     let assigned_players = assigned_players.clone();
 
                     async move {
-                        let assigned_players = assigned_players.read_arc();
+                        let assigned_players = assigned_players.read();
 
                         if assigned_players.is_empty() {
                             return;
                         }
 
                         stream::iter(assigned_players.values())
-                            .for_each_concurrent(None, |player| {
-                                let fivem_service = fivem_service.clone();
+                            .for_each_concurrent(None, |player| async move {
+                                let result = fivem_service
+                                    .heartbeat(
+                                        &player.machine_hash,
+                                        &player.entitlement_id,
+                                        &player.account_index,
+                                    )
+                                    .await;
 
-                                async move {
-                                    let result = fivem_service
-                                        .heartbeat(
-                                            &player.machine_hash,
-                                            &player.entitlement_id,
-                                            &player.account_index,
-                                        )
-                                        .await;
-
-                                    if let Err(error) = result {
-                                        info!("Player {} ticket error: {:?}", &player.id, error);
-                                    }
+                                if let Err(error) = result {
+                                    info!("Player {} ticket error: {:?}", &player.id, error);
                                 }
                             })
                             .await
