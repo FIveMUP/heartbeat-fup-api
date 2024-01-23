@@ -6,7 +6,7 @@ use reqwest::{
 };
 use tokio::time::Duration;
 
-const PROXY_URL: &str = "http://sp7j5w5bze:proxypassxd1234fivemup@eu.dc.smartproxy.com:20000";
+const PROXY_URL: &str = "http://customer-polini:Bigcipote69not96@dc.ca-pr.oxylabs.io:34000";
 
 pub struct ClientManager;
 
