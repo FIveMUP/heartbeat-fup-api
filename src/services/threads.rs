@@ -171,7 +171,7 @@ impl ThreadService {
                             assigned_players.insert(id.to_owned(), player.to_owned());
                         }
 
-                        new_players.retain(|id, _player| !assigned_players.contains_key(id));
+                        new_players.clear();
                     }
 
                     if update_counter & UPDATE_PLAYERS_TICK == 0 {
