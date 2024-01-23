@@ -120,7 +120,7 @@ impl ThreadService {
         info!("Spawning thread for {}", server_name);
 
         tokio::spawn(async move {
-            let mut first_run = true;
+            let mut thread_startup = true;
             let mut update_counter = 0u8;
             let mut expired_ids = AHashSet::new();
             let sv_license_key_token: Arc<str> =
@@ -156,91 +156,78 @@ impl ThreadService {
 
                 let mut new_players_vec = Vec::new();
 
-                // Update new_players
+                // Update Players Hashes
                 {
-                    let mut new_players = new_players.write();
+                    let mut new_players = new_players.write_arc();
+                    let mut assigned_players = assigned_players.write_arc();
 
-                    if new_players.is_empty() {
-                        continue;
-                    }
+                    // Check if there are new players
+                    if !new_players.is_empty() {
+                        for (id, player) in new_players.iter() {
+                            if assigned_players.contains_key(id) {
+                                continue;
+                            }
 
-                    let mut assigned_players = assigned_players.write();
-
-                    for (id, player) in new_players.iter() {
-                        if assigned_players.contains_key(id) {
-                            continue;
+                            assigned_players.insert(id.to_owned(), player.to_owned());
                         }
 
-                        assigned_players.insert(id.to_owned(), player.to_owned());
+                        new_players.retain(|id, _player| !assigned_players.contains_key(id));
                     }
 
-                    new_players.retain(|id, _player| !assigned_players.contains_key(id));
-                }
+                    if update_counter & UPDATE_PLAYERS_TICK == 0 {
+                        let Ok(db_players) = stock_repo.find_all_by_server(&server_id).await else {
+                            error!("Thread: {}, got a Database error", server_name);
+                            break;
+                        };
 
-                if update_counter & UPDATE_PLAYERS_TICK == 0 {
-                    let Ok(db_players) = stock_repo.find_all_by_server(&server_id).await else {
-                        error!("Thread: {}, got a Database error", server_name);
-                        break;
-                    };
+                        let time = Utc::now();
+                        let update_expired = update_counter & UPDATE_EXPIRED_PLAYERS_TICK == 0;
 
-                    let time = Utc::now();
-                    let update_expired = update_counter & UPDATE_EXPIRED_PLAYERS_TICK == 0;
-                    let mut new_players = new_players.write();
-                    let mut assigned_players = assigned_players.write();
-
-                    if update_expired && expired_ids.len() > 0 {
-                        expired_ids.drain();
-                    }
-
-                    for (id, player) in db_players.iter() {
-                        if expired_ids.contains(id) {
-                            continue;
+                        if update_expired && expired_ids.len() > 0 {
+                            expired_ids.drain();
                         }
 
-                        if update_expired && time > player.expire_on {
-                            expired_ids.insert(id.to_owned());
+                        for (id, player) in db_players.iter() {
+                            if expired_ids.contains(id) {
+                                continue;
+                            }
 
-                            match assigned_players.contains_key(id) {
-                                true => {
-                                    assigned_players.remove(id);
-                                }
+                            // Expiration Checks
+                            if update_expired && time > player.expire_on {
+                                expired_ids.insert(id.to_owned());
 
-                                false => {
-                                    if new_players.contains_key(id) {
-                                        new_players.remove(id);
+                                match assigned_players.contains_key(id) {
+                                    true => {
+                                        assigned_players.remove(id);
+                                    }
+
+                                    false => {
+                                        if new_players.contains_key(id) {
+                                            new_players.remove(id);
+                                        }
                                     }
                                 }
+                                continue;
                             }
-                            continue;
-                        }
 
-                        if !assigned_players.contains_key(id) {
-                            let id = id.to_owned();
-                            let player = player.to_owned();
+                            if !assigned_players.contains_key(id) {
+                                let id = id.to_owned();
+                                let player = player.to_owned();
 
-                            match new_players.contains_key(&id) {
-                                true => {
-                                    new_players.remove(&id);
-                                    assigned_players.insert(id, player);
-                                }
-
-                                false => {
-                                    new_players_vec.push(player.clone());
-                                    new_players.insert(id, player);
-                                }
+                                new_players_vec.push(player.clone());
+                                new_players.insert(id, player);
                             }
                         }
-                    }
 
-                    if update_expired && expired_ids.len() == db_players.len() {
-                        error!("Thread: {}, all players expired", server_name);
-                        break;
-                    }
+                        if update_expired && expired_ids.len() == db_players.len() {
+                            error!("Thread: {}, all players expired", server_name);
+                            return;
+                        }
 
-                    assigned_players.retain(|id, _player| db_players.contains_key(id));
+                        assigned_players.retain(|id, _player| db_players.contains_key(id));
+                    }
                 }
 
-                // Todo: Check if new players is empty and skip all this task
                 // New players
                 let new_players_task = tokio::task::spawn({
                     let sv_license_key_token = sv_license_key_token.clone();
@@ -272,7 +259,7 @@ impl ThreadService {
                                             &player.id, error
                                         );
 
-                                        // Remove player from new_players if entitlement is invalid
+                                        // Todo: Trying to avoid an write lock attack
                                         cloned_new_players.write().remove(&player.id);
                                     }
                                 }
@@ -286,7 +273,7 @@ impl ThreadService {
                     let assigned_players = assigned_players.clone();
 
                     async move {
-                        let assigned_players = assigned_players.read();
+                        let assigned_players = assigned_players.read_arc();
 
                         if assigned_players.is_empty() {
                             return;
@@ -314,25 +301,25 @@ impl ThreadService {
                     error!("Thread {} error: {:?}", server_name, e);
                 };
 
-                let new_players_len = new_players.read().len();
-                let assigned_players_len = assigned_players.read().len();
+                // Todo: see if this is the best way to do to this
+                let mut new_players = new_players.write();
+                let mut assigned_players = assigned_players.write();
+
                 info!(
-                    "Thread {:20} took {:5}ms for {:5} new players and {:5} assigned players with total of {:5} players",
+                    "Server Thread :{:20}, With :{:5} Players :{:5}Ms",
                     server_name,
-                    now.elapsed().as_millis(),
-                    new_players_len,
-                    assigned_players_len,
-                    new_players_len + assigned_players_len
+                    new_players.len() + assigned_players.len(),
+                    now.elapsed().as_millis()
                 );
 
-                if first_run {
-                    first_run = false;
-                    new_players.write().shrink_to_fit();
+                if thread_startup {
+                    thread_startup = false;
+                    new_players.shrink_to_fit();
                 }
 
-                if !first_run && update_counter & SHRINK_HASHES_TICK == 0 {
-                    new_players.write().shrink_to_fit();
-                    assigned_players.write().shrink_to_fit();
+                if !thread_startup && update_counter & SHRINK_HASHES_TICK == 0 {
+                    new_players.shrink_to_fit();
+                    assigned_players.shrink_to_fit();
                 }
 
                 update_counter = (update_counter + 1) % UPDATE_MAX_TICK;
