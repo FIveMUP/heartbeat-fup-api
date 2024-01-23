@@ -1,6 +1,6 @@
 [package]
 name = "heartbeat_api"
-version = "1.7.1"
+version = "1.7.2"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -20,6 +20,7 @@ serde = { version = "1", features = ["derive"] }
 reqwest = { version = "0.11", features = ["json"] }
 compact_str = { version = "0.7", features = ["serde"] }
 deadpool = { version = "0.10.0", features = ["rt_tokio_1"] }
+once_cell = { version = "1.19.0", features = ["parking_lot"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tower = { version = "0.4", features = ["tokio", "timeout", "load-shed"] }
 sqlx = { version = "0.7", features = ["mysql", "runtime-tokio", "chrono"] }

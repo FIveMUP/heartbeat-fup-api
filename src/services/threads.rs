@@ -1,5 +1,6 @@
 use crate::{
     config::Database,
+    entities::StockAccount,
     error::{AppResult, ThreadError},
     repositories::StockAccountRepository,
     services::FivemService,
@@ -118,7 +119,6 @@ impl ThreadService {
         info!("Spawning thread for {}", server_name);
 
         tokio::spawn(async move {
-            info!("Spawned thread for {}", server_name);
             let mut first_run = true;
             let mut update_counter = 0u8;
             let mut expired_ids = AHashSet::new();
@@ -126,8 +126,11 @@ impl ThreadService {
                 Arc::from(urlencoding::encode(&sv_license_key_token));
 
             let players_count = stock_repo.get_count(&server_id).await.unwrap_or(20);
-            let new_players = Arc::from(RwLock::new(AHashSet::with_capacity(players_count)));
+            let new_players: Arc<RwLock<AHashMap<CompactString, StockAccount>>> =
+                Arc::from(RwLock::new(AHashMap::with_capacity(players_count)));
             let assigned_players = Arc::from(RwLock::new(AHashMap::with_capacity(players_count)));
+
+            info!("Spawned thread for {}", server_name);
 
             loop {
                 time::sleep(THREAD_SLEEP_TIME).await;
@@ -151,6 +154,27 @@ impl ThreadService {
                 }
 
                 let mut new_players_vec = Vec::new();
+
+                // Update new_players
+                {
+                    let mut new_players = new_players.write();
+
+                    if new_players.is_empty() {
+                        continue;
+                    }
+
+                    let mut assigned_players = assigned_players.write();
+
+                    for (id, player) in new_players.iter() {
+                        if assigned_players.contains_key(id) {
+                            continue;
+                        }
+
+                        assigned_players.insert(id.to_owned(), player.to_owned());
+                    }
+
+                    new_players.retain(|id, _player| !assigned_players.contains_key(id));
+                }
 
                 if update_counter & UPDATE_PLAYERS_TICK == 0 {
                     let Ok(db_players) = stock_repo.find_all_by_server(&server_id).await else {
@@ -181,7 +205,7 @@ impl ThreadService {
                                 }
 
                                 false => {
-                                    if new_players.contains(id) {
+                                    if new_players.contains_key(id) {
                                         new_players.remove(id);
                                     }
                                 }
@@ -193,15 +217,15 @@ impl ThreadService {
                             let id = id.to_owned();
                             let player = player.to_owned();
 
-                            match new_players.contains(&id) {
+                            match new_players.contains_key(&id) {
                                 true => {
                                     new_players.remove(&id);
                                     assigned_players.insert(id, player);
                                 }
 
                                 false => {
-                                    new_players_vec.push(player);
-                                    new_players.insert(id);
+                                    new_players_vec.push(player.clone());
+                                    new_players.insert(id, player);
                                 }
                             }
                         }

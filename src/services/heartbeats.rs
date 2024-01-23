@@ -1,6 +1,6 @@
 use crate::{
     error::{AppResult, CfxApiError},
-    structs::reqwest_manager::ClientManager,
+    structs::client_manager::ClientManager,
 };
 use deadpool::managed::Pool;
 
@@ -41,9 +41,7 @@ impl FivemService {
             let client = self.clients.get().await.unwrap();
 
             client
-                .post(HEARTBEAT_URL)
-                .body(entitlement_heartbeat)
-                .send()
+                .execute_post(HEARTBEAT_URL, entitlement_heartbeat)
                 .await
                 .map_err(|e| {
                     tracing::error!("Error sending entitlement heartbeat: {}", e);
@@ -83,9 +81,7 @@ impl FivemService {
         let client = self.clients.get().await.unwrap();
 
         let resp = client
-            .post(TICKET_CREATION_URL)
-            .body(ticket_heartbeat)
-            .send()
+            .execute_post(TICKET_CREATION_URL, ticket_heartbeat)
             .await
             .map_err(|_| CfxApiError::TicketHeartbeatFailed)?;
 
