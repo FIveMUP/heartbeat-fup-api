@@ -22,7 +22,12 @@ static HEADERS: Lazy<HeaderMap> = Lazy::new(|| {
     headers
 });
 
+const TIMEOUT: Duration = Duration::from_secs(5);
 const PROXY_URL: &str = "http://customer-polini:Bigcipote69not96@dc.ca-pr.oxylabs.io:34000";
+
+// Allowing this because never mutates
+#[allow(clippy::declare_interior_mutable_const)]
+const USER_AGENT: HeaderValue = HeaderValue::from_static("CitizenFX/1 (with adhesive; rel. 7194)");
 
 pub struct ClientManager;
 
@@ -34,9 +39,9 @@ impl Manager for ClientManager {
     async fn create(&self) -> Result<Self::Type, Self::Error> {
         let client = Client::builder()
             .proxy(Proxy::all(PROXY_URL).unwrap())
-            .user_agent("CitizenFX/1 (with adhesive; rel. 7194)")
+            .user_agent(USER_AGENT)
             .default_headers(HEADERS.deref().clone())
-            .timeout(Duration::from_secs(10))
+            .timeout(TIMEOUT)
             .build()?;
 
         Ok(TrackingClient::new(client))
