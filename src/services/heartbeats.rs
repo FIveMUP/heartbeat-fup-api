@@ -2,7 +2,7 @@ use crate::{
     error::{AppResult, CfxApiError},
     structs::client_manager::ClientManager,
 };
-use deadpool::managed::Pool;
+use deadpool::{managed::Pool, Status};
 
 const TICKET_CREATION_URL: &str = "https://lambda.fivem.net/api/ticket/create";
 const HEARTBEAT_URL: &str = "https://cnl-hb-live.fivem.net/api/validate/entitlement";
@@ -15,9 +15,14 @@ pub struct FivemService {
 impl FivemService {
     pub fn new() -> Self {
         let mgr = ClientManager;
-        let pool = Pool::builder(mgr).build().unwrap();
+        let pool = Pool::builder(mgr).max_size(5000).build().unwrap();
 
         Self { clients: pool }
+    }
+
+    #[inline]
+    pub fn status(&self) -> Status {
+        self.clients.status()
     }
 
     #[inline(always)]

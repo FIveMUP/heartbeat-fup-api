@@ -323,6 +323,7 @@ impl ThreadService {
                 }
 
                 update_counter = (update_counter + 1) % UPDATE_MAX_TICK;
+                info!("Reqwest Client Status: {:?}", fivem_service.status());
             }
         })
     }
