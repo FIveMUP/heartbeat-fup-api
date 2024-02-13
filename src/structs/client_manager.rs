@@ -1,7 +1,7 @@
 use std::ops::Deref;
 
 use axum::async_trait;
-use deadpool::managed::{self, Manager};
+use deadpool::managed::{self, Manager, RecycleResult};
 use once_cell::sync::Lazy;
 use reqwest::{
     header::{HeaderMap, HeaderValue, CONTENT_TYPE},
@@ -49,11 +49,13 @@ impl Manager for ClientManager {
 
     async fn recycle(
         &self,
-        client: &mut TrackingClient,
+        obj: &mut Self::Type,
         _metrics: &managed::Metrics,
-    ) -> managed::RecycleResult<Self::Error> {
-        if client.is_busy() {
-            return Err(managed::RecycleError::StaticMessage("Client is busy"));
+    ) -> RecycleResult<Self::Error> {
+        if !obj.is_recyclable() {
+            return Err(managed::RecycleError::StaticMessage(
+                "Client is not recyclable",
+            ));
         }
 
         Ok(())

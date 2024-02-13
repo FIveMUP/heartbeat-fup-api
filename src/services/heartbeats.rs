@@ -15,7 +15,7 @@ pub struct FivemService {
 impl FivemService {
     pub fn new() -> Self {
         let mgr = ClientManager;
-        let pool = Pool::builder(mgr).max_size(5000).build().unwrap();
+        let pool = Pool::builder(mgr).max_size(2000).build().unwrap();
 
         Self { clients: pool }
     }

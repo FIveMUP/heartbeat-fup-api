@@ -229,7 +229,7 @@ impl ThreadService {
                 }
 
                 // New players
-                let new_players_task = tokio::task::spawn({
+                let new_players_task = tokio::spawn({
                     let sv_license_key_token = sv_license_key_token.clone();
                     let cloned_new_players = new_players.clone();
 
@@ -269,7 +269,7 @@ impl ThreadService {
                 });
 
                 // Assigned players
-                let assigned_players_task = tokio::task::spawn({
+                let assigned_players_task = tokio::spawn({
                     let assigned_players = assigned_players.clone();
 
                     async move {

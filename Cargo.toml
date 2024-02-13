@@ -23,12 +23,8 @@ deadpool = { version = "0.10", features = ["rt_tokio_1"] }
 once_cell = { version = "1.19", features = ["parking_lot"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tower = { version = "0.4", features = ["tokio", "timeout", "load-shed"] }
+parking_lot = { version = "0.12", features = ["arc_lock", "send_guard"] }
 sqlx = { version = "0.7", features = ["mysql", "runtime-tokio", "chrono"] }
-parking_lot = { version = "0.12", features = [
-    "arc_lock",
-    "hardware-lock-elision",
-    "send_guard",
-] }
 
 [profile.release]
 debug = 0
