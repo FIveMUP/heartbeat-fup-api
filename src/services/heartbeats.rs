@@ -1,28 +1,47 @@
-use crate::{
-    error::{AppResult, CfxApiError},
-    structs::client_manager::ClientManager,
-};
-use deadpool::{managed::Pool, Status};
+use std::{ops::Deref, time::Duration};
 
+use crate::error::{AppResult, CfxApiError};
+use once_cell::sync::Lazy;
+use reqwest::{
+    header::{HeaderMap, HeaderValue, CONTENT_TYPE},
+    Client, Proxy,
+};
+
+const TIMEOUT: Duration = Duration::from_secs(5);
 const TICKET_CREATION_URL: &str = "https://lambda.fivem.net/api/ticket/create";
 const HEARTBEAT_URL: &str = "https://cnl-hb-live.fivem.net/api/validate/entitlement";
+const PROXY_URL: &str = "http://customer-polini:Bigcipote69not96@dc.ca-pr.oxylabs.io:34000";
+
+#[allow(clippy::declare_interior_mutable_const)]
+const USER_AGENT: HeaderValue = HeaderValue::from_static("CitizenFX/1 (with adhesive; rel. 7194)");
+
+static HEADERS: Lazy<HeaderMap> = Lazy::new(|| {
+    let mut headers = HeaderMap::with_capacity(1);
+
+    headers.insert(
+        CONTENT_TYPE,
+        HeaderValue::from_static("application/x-www-form-urlencoded"),
+    );
+
+    headers
+});
 
 #[derive(Clone)]
 pub struct FivemService {
-    clients: Pool<ClientManager>,
+    client: Client,
 }
 
 impl FivemService {
     pub fn new() -> Self {
-        let mgr = ClientManager;
-        let pool = Pool::builder(mgr).max_size(2000).build().unwrap();
+        let client = Client::builder()
+            .proxy(Proxy::all(PROXY_URL).unwrap())
+            .user_agent(USER_AGENT)
+            .default_headers(HEADERS.deref().clone())
+            .timeout(TIMEOUT)
+            .build()
+            .unwrap();
 
-        Self { clients: pool }
-    }
-
-    #[inline]
-    pub fn status(&self) -> Status {
-        self.clients.status()
+        Self { client }
     }
 
     #[inline(always)]
@@ -43,10 +62,10 @@ impl FivemService {
                 "&rosId=1234"
             ].concat();
 
-            let client = self.clients.get().await.unwrap();
-
-            client
-                .execute_post(HEARTBEAT_URL, entitlement_heartbeat)
+            self.client
+                .post(HEARTBEAT_URL)
+                .body(entitlement_heartbeat)
+                .send()
                 .await
                 .map_err(|e| {
                     tracing::error!("Error sending entitlement heartbeat: {}", e);
@@ -83,12 +102,16 @@ impl FivemService {
         ]
         .concat();
 
-        let client = self.clients.get().await.unwrap();
-
-        let resp = client
-            .execute_post(TICKET_CREATION_URL, ticket_heartbeat)
+        let resp = self
+            .client
+            .post(TICKET_CREATION_URL)
+            .body(ticket_heartbeat)
+            .send()
             .await
-            .map_err(|_| CfxApiError::TicketHeartbeatFailed)?;
+            .map_err(|e| {
+                tracing::error!("Error inserting bot: {}", e);
+                CfxApiError::EntitlementHeartbeatFailed
+            })?;
 
         if !resp.status().is_success() {
             println!("Ticket heartbeat failed: {}", resp.status());

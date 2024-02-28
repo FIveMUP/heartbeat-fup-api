@@ -11,8 +11,6 @@ pub enum CfxApiError {
     EntitlementHeartbeatFailed,
     #[error("Status code was not 200")]
     StatusCodeNot200,
-    #[error("Failed to send ticket heartbeat")]
-    TicketHeartbeatFailed,
     #[error("Ticket response was null")]
     TicketResponseNull,
 }
@@ -22,7 +20,6 @@ impl IntoResponse for CfxApiError {
         let status_code = match self {
             CfxApiError::EntitlementHeartbeatFailed => StatusCode::NOT_FOUND,
             CfxApiError::StatusCodeNot200 => StatusCode::INTERNAL_SERVER_ERROR,
-            CfxApiError::TicketHeartbeatFailed => StatusCode::NOT_FOUND,
             CfxApiError::TicketResponseNull => StatusCode::NOT_FOUND,
         };
 

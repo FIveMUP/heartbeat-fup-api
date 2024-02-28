@@ -15,7 +15,6 @@ mod response;
 mod routes;
 mod services;
 mod states;
-mod structs;
 mod utils;
 
 #[tokio::main]

@@ -14,6 +14,8 @@ pub enum AppError {
     CfxApi(#[from] CfxApiError),
     #[error(transparent)]
     Sqlx(#[from] sqlx::Error),
+    #[error(transparent)]
+    Reqwest(#[from] reqwest::Error),
 }
 
 impl IntoResponse for AppError {
@@ -24,6 +26,13 @@ impl IntoResponse for AppError {
             AppError::CfxApi(e) => e.into_response(),
             AppError::Sqlx(e) => {
                 tracing::error!("Sqlx error: {}", e);
+                Response::builder()
+                    .status(500)
+                    .body("Internal server error".into())
+                    .unwrap()
+            }
+            AppError::Reqwest(e) => {
+                tracing::error!("Reqwest error: {}", e);
                 Response::builder()
                     .status(500)
                     .body("Internal server error".into())
