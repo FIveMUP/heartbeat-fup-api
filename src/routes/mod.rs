@@ -17,7 +17,8 @@ async fn handle(_: Box<dyn std::error::Error + Send + Sync>) -> (StatusCode, Str
 }
 
 #[inline(always)]
-pub(crate) async fn routes(db: Database) -> IntoMakeService<Router> {
+pub async fn routes() -> IntoMakeService<Router> {
+    let db = Database::new().await;
     let global_state = GlobalState::new(db);
 
     Router::new()

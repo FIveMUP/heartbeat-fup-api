@@ -1,4 +1,4 @@
-use config::{init_tracing, Database};
+use config::init_tracing;
 use dotenvy::dotenv;
 use mimalloc::MiMalloc;
 use tokio::net::TcpListener;
@@ -21,10 +21,7 @@ mod utils;
 async fn main() {
     dotenv().ok();
     init_tracing();
-    let db = Database::new().await;
     let listener = TcpListener::bind("0.0.0.0:9000").await.unwrap();
 
-    axum::serve(listener, routes::routes(db).await)
-        .await
-        .unwrap();
+    axum::serve(listener, routes::routes().await).await.unwrap();
 }
