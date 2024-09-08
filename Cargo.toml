@@ -18,7 +18,7 @@ urlencoding = "2"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 reqwest = { version = "0.11", features = ["json"] }
-compact_str = { version = "0.7", features = ["serde"] }
+compact_str = { version = "0.8", features = ["serde"] }
 once_cell = { version = "1.19", features = ["parking_lot"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tower = { version = "0.4", features = ["tokio", "timeout", "load-shed"] }
